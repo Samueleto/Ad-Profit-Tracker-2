@@ -37,11 +37,11 @@ export async function GET(request: Request) {
     const snapshot = await query.get();
     let results = snapshot.docs.map(serializeDoc).filter(Boolean);
 
-    if (dateFrom) results = results.filter((r) => r!.date >= dateFrom);
-    if (dateTo) results = results.filter((r) => r!.date <= dateTo);
-    if (country) results = results.filter((r) => r!.country === country);
-    if (minRevenue) results = results.filter((r) => Number(r!.revenue) >= parseFloat(minRevenue));
-    if (maxRevenue) results = results.filter((r) => Number(r!.revenue) <= parseFloat(maxRevenue));
+    if (dateFrom) results = results.filter((r) => (r as Record<string, unknown>).date as string >= dateFrom);
+    if (dateTo) results = results.filter((r) => (r as Record<string, unknown>).date as string <= dateTo);
+    if (country) results = results.filter((r) => (r as Record<string, unknown>).country === country);
+    if (minRevenue) results = results.filter((r) => Number((r as Record<string, unknown>).revenue) >= parseFloat(minRevenue));
+    if (maxRevenue) results = results.filter((r) => Number((r as Record<string, unknown>).revenue) <= parseFloat(maxRevenue));
 
     return NextResponse.json({ data: results, total: results.length });
   } catch (error) {

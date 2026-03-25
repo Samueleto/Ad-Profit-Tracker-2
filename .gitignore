@@ -1,0 +1,7 @@
+app/node_modules/
+app/.next/
+app/out/
+app/build/
+*.pem
+.DS_Store
+npm-debug.log*
