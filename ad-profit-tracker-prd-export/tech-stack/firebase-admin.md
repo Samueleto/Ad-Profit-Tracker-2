@@ -1,0 +1,178 @@
+# firebase-admin
+
+Category: database
+
+## Additional Details
+
+Description: Used in Authentication & Account Setup
+Updated At:
+```json
+{
+  "type": "firestore/timestamp/1.0",
+  "seconds": 1774370650,
+  "nanoseconds": 623000000
+}
+```
+Related Pages:
+```json
+[]
+```
+Related Endpoints:
+```json
+[
+  "auth_endpoint_sync_user",
+  "auth_endpoint_get_user",
+  "auth_endpoint_update_profile",
+  "auth_endpoint_delete_account",
+  "api-key-management-storage_endpoint_saveKey",
+  "api-key-management-storage_endpoint_getStatus",
+  "api-key-management-storage_endpoint_deleteKey",
+  "feature_user-settings-preferences_endpoint_get_preferences",
+  "feature_user-settings-preferences_endpoint_patch_preferences",
+  "feature_network-configuration-management_endpoint_configList",
+  "feature_network-configuration-management_endpoint_configUpdate",
+  "feature_network-configuration-management_endpoint_configBulkOrder",
+  "feature_network-configuration-management_endpoint_testConnection",
+  "feature_network-configuration-management_endpoint_syncAll",
+  "feature_network-configuration-management_endpoint_configGet",
+  "feature_network-configuration-management_endpoint_configDelete",
+  "audit_endpoint_log",
+  "audit_endpoint_getLogs",
+  "audit_endpoint_exportLogs",
+  "audit_endpoint_clearLogs",
+  "exoclick_endpoint_sync",
+  "exoclick_endpoint_stats",
+  "exoclick_endpoint_statsByCountry",
+  "exoclick_endpoint_rawResponse",
+  "exoclick_endpoint_scheduledSync",
+  "exoclick_endpoint_statsLatest",
+  "rollerads_endpoint_sync",
+  "rollerads_endpoint_stats",
+  "rollerads_endpoint_stats_by_country",
+  "rollerads_endpoint_stats_latest",
+  "rollerads_endpoint_raw_response",
+  "rollerads_endpoint_scheduled_sync",
+  "zeydoo_endpoint_sync",
+  "zeydoo_endpoint_scheduled_sync",
+  "zeydoo_endpoint_get_stats",
+  "zeydoo_endpoint_stats_by_country",
+  "zeydoo_endpoint_stats_latest",
+  "zeydoo_endpoint_raw_response",
+  "propush_endpoint_sync",
+  "propush_endpoint_scheduled_sync",
+  "propush_endpoint_stats",
+  "propush_endpoint_stats_by_country",
+  "propush_endpoint_stats_latest",
+  "propush_endpoint_raw_response",
+  "feature_automated-daily-data-sync_endpoint_masterScheduledSync",
+  "feature_automated-daily-data-sync_endpoint_syncStatus",
+  "feature_automated-daily-data-sync_endpoint_syncHistory",
+  "feature_automated-daily-data-sync_endpoint_retryFailedSync",
+  "feature_automated-daily-data-sync_endpoint_schedulerHealth",
+  "feature_manual-data-refresh-trigger_endpoint_manual_sync",
+  "feature_historical-data-storage_endpoint_getSnapshot",
+  "feature_historical-data-storage_endpoint_getTrend",
+  "feature_historical-data-storage_endpoint_getSummary",
+  "feature_historical-data-storage_endpoint_getGeoBreakdown",
+  "feature_historical-data-storage_endpoint_getCoverage",
+  "feature_historical-data-storage_endpoint_backfill",
+  "feature_historical-data-storage_endpoint_deleteSnapshot",
+  "feature_historical-data-storage_endpoint_listDates",
+  "error_handling_endpoint_retryState",
+  "error_handling_endpoint_circuitBreakerStatus",
+  "error_handling_endpoint_circuitBreakerReset",
+  "error_handling_endpoint_errorLog",
+  "error_handling_endpoint_errorSummary",
+  "error_handling_endpoint_retryConfig",
+  "error_handling_endpoint_updateRetryConfig",
+  "reconciliation_endpoint_run",
+  "reconciliation_endpoint_status",
+  "reconciliation_endpoint_anomalies",
+  "reconciliation_endpoint_resolve",
+  "reconciliation_endpoint_rules_get",
+  "reconciliation_endpoint_rules_patch",
+  "feature_real-time-sync-status-monitoring_endpoint_livesyncstate",
+  "feature_real-time-sync-status-monitoring_endpoint_syncactivityfeed",
+  "feature_real-time-sync-status-monitoring_endpoint_syncprogress",
+  "rate_limit_endpoint_status",
+  "rate_limit_endpoint_reset",
+  "rate_limit_endpoint_config_get",
+  "rate_limit_endpoint_violations",
+  "feature_financial-metrics-dashboard_endpoint_dashboard-metrics",
+  "feature_roi-calculation-engine_endpoint_roi_compute",
+  "feature_roi-calculation-engine_endpoint_roi_thresholds_get",
+  "feature_roi-calculation-engine_endpoint_roi_thresholds_update",
+  "feature_roi-calculation-engine_endpoint_roi_breakdown",
+  "feature_per-network-analytics-tabs_endpoint_network_stats",
+  "feature_comparative-network-analysis_endpoint_comparison_summary",
+  "feature_performance-benchmarking_endpoint_performance",
+  "feature_performance-benchmarking_endpoint_settings_get",
+  "feature_performance-benchmarking_endpoint_settings_patch",
+  "feature_data-filtering-search_endpoint_filter_options",
+  "feature_data-filtering-search_endpoint_filtered_stats",
+  "feature_data-filtering-search_endpoint_search_rows",
+  "feature_data-filtering-search_endpoint_filter_presets_list",
+  "feature_data-filtering-search_endpoint_filter_presets_save",
+  "feature_data-filtering-search_endpoint_filter_presets_delete",
+  "feature_excel-export-functionality_endpoint_export_excel",
+  "feature_excel-export-functionality_endpoint_export_preview",
+  "feature_pdf-export-functionality_endpoint_export_pdf",
+  "custom_report_endpoint_save",
+  "custom_report_endpoint_list",
+  "custom_report_endpoint_update",
+  "custom_report_endpoint_delete",
+  "custom_report_endpoint_run",
+  "feature_scheduled-report-delivery_endpoint_create",
+  "feature_scheduled-report-delivery_endpoint_list",
+  "feature_scheduled-report-delivery_endpoint_update",
+  "feature_scheduled-report-delivery_endpoint_delete",
+  "feature_scheduled-report-delivery_endpoint_send_now",
+  "feature_in-app-notifications_endpoint_list",
+  "feature_in-app-notifications_endpoint_dismiss",
+  "feature_in-app-notifications_endpoint_mark_all_read",
+  "feature_in-app-notifications_endpoint_clear",
+  "feature_in-app-notifications_endpoint_create",
+  "feature_in-app-notifications_endpoint_preferences_get",
+  "feature_in-app-notifications_endpoint_preferences_patch",
+  "feature_email-alerts-notifications_endpoint_send_alert",
+  "feature_email-alerts-notifications_endpoint_send_summary",
+  "feature_email-alerts-notifications_endpoint_send_test",
+  "feature_email-alerts-notifications_endpoint_schedule_daily_summary",
+  "feature_email-alerts-notifications_endpoint_get_email_log",
+  "multi_user_endpoint_get_members",
+  "multi_user_endpoint_get_workspace",
+  "multi_user_endpoint_update_workspace",
+  "multi_user_endpoint_change_role",
+  "rbac_endpoint_get_permissions",
+  "rbac_endpoint_patch_permissions",
+  "rbac_endpoint_my_permissions",
+  "rbac_endpoint_check",
+  "help_endpoint_list_articles",
+  "help_endpoint_get_article",
+  "help_endpoint_view_article",
+  "help_endpoint_search",
+  "help_endpoint_feedback",
+  "cloudrun_endpoint_deployment_status",
+  "cloudrun_endpoint_health_check",
+  "cloudrun_endpoint_readiness_check"
+]
+```
+Related Flows:
+```json
+[
+  "authentication-account-setup",
+  "api-key-management-settings",
+  "data-synchronization-collection",
+  "dashboard-analytics-visualization",
+  "reporting-data-export",
+  "notifications-alerts",
+  "team-collaboration-access-control",
+  "help-support",
+  "deployment-infrastructure"
+]
+```
+Priority: recommended
+Source: generated
+
+---
+Generated by VisualPRD

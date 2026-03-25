@@ -1,0 +1,119 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ========== Helper functions ==========
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isResourceOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function isImmutableField(field) {
+      return !(field in request.resource.data) || request.resource.data[field] == resource.data[field];
+    }
+
+    // ========== users collection ==========
+    match /users/{userId} {
+      allow create: if isAuthenticated()
+        && request.auth.uid == userId
+        && request.resource.data.uid == request.auth.uid;
+
+      allow read: if isOwner(userId);
+
+      allow update: if isOwner(userId)
+        && isImmutableField('createdAt')
+        && isImmutableField('uid');
+
+      allow delete: if false;
+    }
+
+    // ========== apiKeys collection ==========
+    match /apiKeys/{docId} {
+      allow read: if isResourceOwner();
+      allow create: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid;
+      allow update: if isResourceOwner();
+      allow delete: if false;
+    }
+
+    // ========== networkConfigs collection ==========
+    match /networkConfigs/{docId} {
+      allow read: if isResourceOwner();
+      allow create: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid;
+      allow update: if isResourceOwner()
+        && isImmutableField('userId')
+        && isImmutableField('createdAt');
+      allow delete: if false;
+    }
+
+    // ========== adStats collection ==========
+    match /adStats/{docId} {
+      allow read: if isResourceOwner();
+      allow create: if false; // Server-side only via Admin SDK
+      allow update: if false; // Server-side only via Admin SDK
+      allow delete: if false;
+    }
+
+    // ========== auditLogs collection ==========
+    match /auditLogs/{docId} {
+      allow read: if isResourceOwner();
+      allow create: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid;
+      allow update: if isResourceOwner()
+        && isImmutableField('createdAt')
+        && isImmutableField('userId');
+      allow delete: if false;
+    }
+
+    // ========== benchmarks collection ==========
+    match /benchmarks/{docId} {
+      allow read: if isResourceOwner();
+      allow create: if isAuthenticated()
+        && request.resource.data.userId == request.auth.uid;
+      allow update: if isResourceOwner();
+      allow delete: if false;
+    }
+
+    // ========== workspaceInvitations collection ==========
+    match /workspaceInvitations/{docId} {
+      allow read: if isAuthenticated()
+        && (resource.data.invitedByUid == request.auth.uid
+          || resource.data.acceptedByUid == request.auth.uid);
+      allow create: if false; // Server-side only
+      allow update: if false; // Server-side only
+      allow delete: if false;
+    }
+
+    // ========== workspacePermissions collection ==========
+    match /workspacePermissions/{docId} {
+      allow read: if isAuthenticated();
+      allow write: if false; // Admin SDK only
+    }
+
+    // ========== helpArticles collection ==========
+    match /helpArticles/{docId} {
+      allow read: if isAuthenticated() && resource.data.isPublished == true;
+      allow write: if false; // Admin SDK only
+    }
+
+    // ========== cachedResponses collection ==========
+    match /cachedResponses/{docId} {
+      allow read: if isResourceOwner();
+      allow write: if false; // Server-side only
+    }
+
+    // ========== Deny all other collections ==========
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

@@ -1,0 +1,91 @@
+# auditLogs
+
+## Description
+
+PURPOSE: Append-only audit trail of all user-initiated actions within Ad Profit Tracker
+
+FIELDS:
+id: string
+├── Purpose: Auto-generated Firestore document ID
+│   ├── Constraints: required
+│   └── Mutable: no
+
+userId: string
+├── Purpose: UID of the authenticated user who performed the action. Always set from verified Firebase ID token — never from client input. Used as the primary partition key for all queries.
+│   ├── Constraints: required
+│   └── Mutable: no
+
+action: string
+├── Purpose: Semantic action identifier. Enum: api_key_saved, api_key_deleted, network_config_updated, network_config_reordered, network_config_reset, network_connection_tested, manual_sync_triggered, preferences_updated, profile_updated, account_deleted. Indexed for filter queries.
+│   ├── Constraints: required
+│   └── Mutable: yes
+
+resourceType: string
+├── Purpose: Category of the affected resource. Enum: api_key, network_config, preferences, profile, sync. Used for display grouping and filtering.
+│   ├── Constraints: required
+│   └── Mutable: yes
+
+resourceId: string
+├── Purpose: Identifier of the specific resource affected (e.g., networkId like 'exoclick', 'rollerads'). Null for actions that affect the whole user account.
+│   └── Mutable: no
+
+metadata: map
+├── Purpose: Flexible key-value payload capturing action-specific context. Examples: { changedFields: { syncSchedule: { from: 'daily', to: 'hourly' } } } for config updates; { triggered: ['exoclick'], skipped: ['rollerads'], failed: [] } for sync-all; { status: 'ok', latencyMs: 342 } for connection tests. Never contains raw API keys or encrypted values.
+│   └── Mutable: yes
+
+ipAddress: string
+├── Purpose: Client IP address extracted from the request headers server-side. Stored for security audit purposes. Never sourced from client-supplied input.
+│   └── Mutable: yes
+
+userAgent: string
+├── Purpose: User-Agent header from the request. Helps identify the client context for security reviews.
+│   └── Mutable: yes
+
+status: string
+├── Purpose: Outcome of the action. Enum: success, failure. Allows filtering for failed actions specifically.
+│   ├── Constraints: required
+│   └── Mutable: yes
+
+errorMessage: string
+├── Purpose: Human-readable error description if status=failure. Null on success.
+│   └── Mutable: yes
+
+createdAt: timestamp
+└── Purpose: Server timestamp written via admin.firestore.FieldValue.serverTimestamp() at document creation. Immutable. Primary sort key for all queries.
+    ├── Constraints: required
+    └── Mutable: no
+
+FIRESTORE SECURITY RULES:
+- Create: [AUTH_USER_ID] != null
+- Read: [user_id] == [AUTH_USER_ID]
+- Update: [user_id] == [AUTH_USER_ID]
+- Delete: Soft delete (mark deleted, retain data)
+- Immutable: createdAt, userId
+
+LIFECYCLE:
+- Created: set [SERVER_TIMESTAMP] for createdAt
+
+## Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| id | string | Yes | Auto-generated Firestore document ID |
+| userId | string | Yes | UID of the authenticated user who performed the action. Always set from verified Firebase ID token — never from client input. Used as the primary partition key for all queries. |
+| action | string | Yes | Semantic action identifier. Enum: api_key_saved, api_key_deleted, network_config_updated, network_config_reordered, network_config_reset, network_connection_tested, manual_sync_triggered, preferences_updated, profile_updated, account_deleted. Indexed for filter queries. |
+| resourceType | string | Yes | Category of the affected resource. Enum: api_key, network_config, preferences, profile, sync. Used for display grouping and filtering. |
+| resourceId | string | No | Identifier of the specific resource affected (e.g., networkId like 'exoclick', 'rollerads'). Null for actions that affect the whole user account. |
+| metadata | map | No | Flexible key-value payload capturing action-specific context. Examples: { changedFields: { syncSchedule: { from: 'daily', to: 'hourly' } } } for config updates; { triggered: ['exoclick'], skipped: ['rollerads'], failed: [] } for sync-all; { status: 'ok', latencyMs: 342 } for connection tests. Never contains raw API keys or encrypted values. |
+| ipAddress | string | No | Client IP address extracted from the request headers server-side. Stored for security audit purposes. Never sourced from client-supplied input. |
+| userAgent | string | No | User-Agent header from the request. Helps identify the client context for security reviews. |
+| status | string | Yes | Outcome of the action. Enum: success, failure. Allows filtering for failed actions specifically. |
+| errorMessage | string | No | Human-readable error description if status=failure. Null on success. |
+| createdAt | timestamp | Yes | Server timestamp written via admin.firestore.FieldValue.serverTimestamp() at document creation. Immutable. Primary sort key for all queries. |
+
+## Relationships
+
+
+## Indexes
+
+
+---
+Generated by VisualPRD
