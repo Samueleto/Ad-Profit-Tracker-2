@@ -1,0 +1,99 @@
+'use client';
+
+import { useEffect } from 'react';
+import { AlertTriangle, Loader2 } from 'lucide-react';
+import { useDateRangeStore } from '@/store/dateRangeStore';
+import { auth } from '@/lib/firebase/auth';
+
+export default function DataAvailabilityDot() {
+  const { fromDate, toDate, dataAvailability, setDataAvailability } = useDateRangeStore();
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchAvailability = async (retry = false) => {
+      setDataAvailability('loading');
+      try {
+        const user = auth.currentUser;
+        if (!user) {
+          setDataAvailability('none');
+          return;
+        }
+        const token = await user.getIdToken(retry);
+        const res = await fetch(`/api/stats/dates?from=${fromDate}&to=${toDate}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+
+        if (cancelled) return;
+
+        if (res.status === 401 && !retry) {
+          return fetchAvailability(true);
+        }
+        if (res.status === 403) {
+          setDataAvailability('error');
+          return;
+        }
+        if (res.status === 404 || res.status === 204) {
+          setDataAvailability('none');
+          return;
+        }
+        if (res.status >= 500) {
+          setDataAvailability('error');
+          return;
+        }
+
+        const data = await res.json();
+        setDataAvailability(data.availability ?? 'none');
+      } catch {
+        if (!cancelled) setDataAvailability('error');
+      }
+    };
+
+    fetchAvailability();
+    return () => { cancelled = true; };
+  }, [fromDate, toDate, setDataAvailability]);
+
+  if (dataAvailability === 'loading') {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-gray-500" title="Checking data availability">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        <span className="sr-only">Loading</span>
+      </span>
+    );
+  }
+
+  if (dataAvailability === 'complete') {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-green-600" title="Data complete">
+        <span className="inline-block h-2 w-2 rounded-full bg-green-500" aria-hidden="true" />
+        <span className="sr-only">Data complete</span>
+      </span>
+    );
+  }
+
+  if (dataAvailability === 'partial') {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-amber-600" title="Partial data">
+        <span className="inline-block h-2 w-2 rounded-full bg-amber-500" aria-hidden="true" />
+        <span className="sr-only">Partial data</span>
+      </span>
+    );
+  }
+
+  if (dataAvailability === 'error') {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-amber-600" title="Data error">
+        <AlertTriangle className="h-3 w-3" />
+        <span className="sr-only">Error</span>
+      </span>
+    );
+  }
+
+  // 'none'
+  return (
+    <span className="flex items-center gap-1.5 text-xs text-gray-400" title="No data">
+      <span className="inline-block h-2 w-2 rounded-full bg-gray-400" aria-hidden="true" />
+      <span className="hidden sm:inline">No data</span>
+    </span>
+  );
+}

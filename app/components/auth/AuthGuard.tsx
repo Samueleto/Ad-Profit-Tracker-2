@@ -33,10 +33,7 @@ export default function AuthGuard({ children }: AuthGuardProps) {
     <>
       {user ? children : null}
       {showLoginModal && (
-        <LoginModal
-          isOpen={showLoginModal}
-          onClose={() => setShowLoginModal(false)}
-        />
+        <LoginModal isOpen={showLoginModal} />
       )}
     </>
   );
