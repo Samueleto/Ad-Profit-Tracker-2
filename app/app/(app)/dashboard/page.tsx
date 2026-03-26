@@ -14,12 +14,14 @@ import ExoClickNetworkTab from '@/features/exoclick/components/ExoClickNetworkTa
 import ZeydooNetworkTab from '@/features/zeydoo/components/ZeydooNetworkTab';
 import FinancialMetricsSection from '@/features/dashboard/components/FinancialMetricsSection';
 import PerNetworkAnalyticsTabsSection from '@/features/network-analytics/components/PerNetworkAnalyticsTabsSection';
+import PerformanceBenchmarkingTab from '@/features/benchmarking/components/PerformanceBenchmarkingTab';
 
-type DashboardTab = 'overview' | 'compare' | 'exoclick' | 'rollerads' | 'zeydoo' | 'propush';
+type DashboardTab = 'overview' | 'compare' | 'benchmarks' | 'exoclick' | 'rollerads' | 'zeydoo' | 'propush';
 
 const TABS: { id: DashboardTab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'compare', label: 'Compare' },
+  { id: 'benchmarks', label: 'Benchmarks' },
   { id: 'exoclick', label: 'ExoClick' },
   { id: 'rollerads', label: 'RollerAds' },
   { id: 'zeydoo', label: 'Zeydoo' },
@@ -112,6 +114,10 @@ export default function DashboardPage() {
         <ComparativeNetworkAnalysisTab
           onNetworkSelect={(networkId) => setActiveTab(networkId as DashboardTab)}
         />
+      )}
+
+      {activeTab === 'benchmarks' && (
+        <PerformanceBenchmarkingTab dateFrom={defaultDateFrom} dateTo={defaultDateTo} />
       )}
 
       {activeTab === 'exoclick' && <ExoClickNetworkTab />}
