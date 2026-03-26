@@ -39,7 +39,7 @@ export default function OnboardingPage() {
   const [formDefaults, setFormDefaults] = useState<OnboardingFormValues>({
     displayName: '',
     timezone: 'UTC',
-    defaultDateRange: 'last30days',
+    defaultDateRange: 'last7days',
   });
   const [submitting, setSubmitting] = useState(false);
   const [skipped, setSkipped] = useState(false);
@@ -55,7 +55,7 @@ export default function OnboardingPage() {
           setFormDefaults({
             displayName: name,
             timezone: data?.user?.preferences?.timezone ?? 'UTC',
-            defaultDateRange: data?.user?.preferences?.defaultDateRange ?? 'last30days',
+            defaultDateRange: data?.user?.preferences?.defaultDateRange ?? 'last7days',
           });
         } else {
           const name = getAuth().currentUser?.displayName ?? '';
