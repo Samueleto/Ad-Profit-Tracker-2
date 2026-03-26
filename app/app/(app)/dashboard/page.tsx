@@ -1,4 +1,5 @@
 import ManualRefreshPanel from '@/features/manual-refresh/components/ManualRefreshPanel';
+import SyncStatusPanel from '@/features/sync-status/components/SyncStatusPanel';
 
 export default function DashboardPage() {
   return (
@@ -12,8 +13,13 @@ export default function DashboardPage() {
         </p>
       </div>
 
-      <div className="max-w-xs">
-        <ManualRefreshPanel />
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-1">
+          <ManualRefreshPanel />
+        </div>
+        <div className="lg:col-span-2">
+          <SyncStatusPanel />
+        </div>
       </div>
     </div>
   );
