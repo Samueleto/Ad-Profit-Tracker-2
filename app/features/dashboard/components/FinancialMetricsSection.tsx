@@ -1,39 +1,17 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState } from 'react';
 import { getAuth } from 'firebase/auth';
 import { TrendingUp, TrendingDown, Minus, RefreshCw, Loader2, Download } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine,
 } from 'recharts';
-import { format, subDays, startOfMonth, differenceInDays } from 'date-fns';
+import { format } from 'date-fns';
 import DailyProfitTrendSection from './DailyProfitTrendSection';
+import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
+import type { Preset } from '../hooks/useDashboardMetrics';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-interface KPIs {
-  totalRevenue: number | null;
-  revenueChange: number | null;
-  totalCost: number | null;
-  costChange: number | null;
-  netProfit: number | null;
-  profitChange: number | null;
-  roi: number | null;
-  roiChange: number | null;
-}
-
-interface DayEntry { date: string; revenue: number; cost: number; netProfit: number; roi: number }
-interface CountryRow { country: string; countryName?: string; revenue: number; cost: number; netProfit: number; metricShare: number }
-interface NetworkRow { networkId: string; primaryMetric: number; lastSyncAt?: string | null; syncStatus?: string }
-
-interface MetricsResponse {
-  kpis: KPIs;
-  dailySeries: DayEntry[];
-  topCountries: CountryRow[];
-  perNetwork: NetworkRow[];
-  cachedAt?: string | null;
-}
-
-// ─── Auth helper ──────────────────────────────────────────────────────────────
+// ─── Auth helper (used by ROICard only for its per-network breakdown) ─────────
 async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const auth = getAuth();
   const token = await auth.currentUser?.getIdToken();
@@ -45,19 +23,6 @@ async function authFetch(path: string, init: RequestInit = {}): Promise<Response
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
   });
-}
-
-// ─── Date range presets ───────────────────────────────────────────────────────
-type Preset = '7d' | '14d' | '30d' | 'month' | 'custom';
-
-function presetRange(preset: Preset): { from: string; to: string } {
-  const today = new Date();
-  const fmt = (d: Date) => format(d, 'yyyy-MM-dd');
-  if (preset === '7d') return { from: fmt(subDays(today, 6)), to: fmt(today) };
-  if (preset === '14d') return { from: fmt(subDays(today, 13)), to: fmt(today) };
-  if (preset === '30d') return { from: fmt(subDays(today, 29)), to: fmt(today) };
-  if (preset === 'month') return { from: fmt(startOfMonth(today)), to: fmt(today) };
-  return { from: fmt(subDays(today, 6)), to: fmt(today) };
 }
 
 // ─── KPI card ─────────────────────────────────────────────────────────────────
@@ -91,14 +56,13 @@ function KPICard({
 }
 
 // ─── Freshness badge ──────────────────────────────────────────────────────────
-function FreshnessBadge({ cachedAt }: { cachedAt?: string | null }) {
-  if (!cachedAt) {
+function FreshnessBadge({ type, minutesAgo }: { type: 'live' | 'cached'; minutesAgo?: number }) {
+  if (type === 'live') {
     return <span className="px-2 py-0.5 text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 rounded-full">Live</span>;
   }
-  const minAgo = Math.round((Date.now() - new Date(cachedAt).getTime()) / 60000);
   return (
     <span className="px-2 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-full">
-      Cached · {minAgo}m ago
+      Cached · {minutesAgo}m ago
     </span>
   );
 }
@@ -215,65 +179,44 @@ interface FinancialMetricsSectionProps {
 }
 
 export default function FinancialMetricsSection({ onSyncNow, onExport }: FinancialMetricsSectionProps) {
-  const [preset, setPreset] = useState<Preset>('7d');
+  const {
+    status,
+    kpis,
+    dailySeries,
+    topCountries,
+    perNetwork,
+    freshness,
+    dateRange,
+    setDateRange,
+    refresh,
+    dateRangeValidationError,
+  } = useDashboardMetrics();
+
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
-  const [rangeError, setRangeError] = useState<string | null>(null);
-  const [data, setData] = useState<MetricsResponse | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [fetchError, setFetchError] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  const getRange = useCallback((): { from: string; to: string } | null => {
-    if (preset === 'custom') {
-      if (!customFrom || !customTo) return null;
-      if (differenceInDays(new Date(customTo), new Date(customFrom)) > 90) return null;
-      return { from: customFrom, to: customTo };
-    }
-    return presetRange(preset);
-  }, [preset, customFrom, customTo]);
-
-  const fetchData = useCallback(async () => {
-    const range = getRange();
-    if (!range) return;
-    setLoading(true);
-    setFetchError(false);
-    try {
-      const params = new URLSearchParams({ dateFrom: range.from, dateTo: range.to });
-      const res = await authFetch(`/api/dashboard/metrics?${params}`);
-      if (!res.ok) { setFetchError(true); return; }
-      setData(await res.json());
-    } catch { setFetchError(true); }
-    finally { setLoading(false); }
-  }, [getRange]);
-
-  useEffect(() => { fetchData(); }, [fetchData]);
+  const preset = dateRange.preset;
 
   const handleRefresh = async () => {
     setRefreshing(true);
-    try {
-      await authFetch('/api/cache/invalidate', { method: 'POST' });
-      await fetchData();
-    } finally { setRefreshing(false); }
+    try { await refresh(); } finally { setRefreshing(false); }
   };
 
   const handleCustomFrom = (v: string) => {
     setCustomFrom(v);
-    if (customTo && differenceInDays(new Date(customTo), new Date(v)) > 90) {
-      setRangeError('Date range cannot exceed 90 days.');
-    } else { setRangeError(null); }
+    if (customTo) setDateRange('custom', { dateFrom: v, dateTo: customTo });
   };
 
   const handleCustomTo = (v: string) => {
     setCustomTo(v);
-    if (customFrom && differenceInDays(new Date(v), new Date(customFrom)) > 90) {
-      setRangeError('Date range cannot exceed 90 days.');
-    } else { setRangeError(null); }
+    if (customFrom) setDateRange('custom', { dateFrom: customFrom, dateTo: v });
   };
 
-  const isEmpty = !loading && !fetchError && data && (
-    !data.dailySeries?.length && !data.topCountries?.length
-  );
+  const loading = status === 'loading';
+  const fetchError = status === 'error';
+  const isEmpty = status === 'empty';
+  const data = status === 'success' ? { kpis, dailySeries, topCountries, perNetwork } : null;
 
   return (
     <div className="space-y-6">
@@ -288,7 +231,7 @@ export default function FinancialMetricsSection({ onSyncNow, onExport }: Financi
               { id: 'month', label: 'This Month' },
               { id: 'custom', label: 'Custom' },
             ] as const).map(p => (
-              <button key={p.id} onClick={() => setPreset(p.id)}
+              <button key={p.id} onClick={() => setDateRange(p.id as Preset)}
                 className={`px-2.5 py-1 text-xs rounded-lg border transition-colors ${
                   preset === p.id
                     ? 'bg-blue-600 border-blue-600 text-white'
@@ -305,12 +248,12 @@ export default function FinancialMetricsSection({ onSyncNow, onExport }: Financi
               <span className="text-xs text-gray-400">–</span>
               <input type="date" value={customTo} onChange={e => handleCustomTo(e.target.value)}
                 className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-white" />
-              {rangeError && <span className="text-xs text-red-500">{rangeError}</span>}
+              {dateRangeValidationError && <span className="text-xs text-red-500">{dateRangeValidationError}</span>}
             </div>
           )}
 
           <div className="ml-auto flex items-center gap-2">
-            <FreshnessBadge cachedAt={data?.cachedAt} />
+            <FreshnessBadge type={freshness.type} minutesAgo={freshness.minutesAgo} />
             <button onClick={handleRefresh} disabled={refreshing}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors">
               {refreshing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
@@ -363,7 +306,7 @@ export default function FinancialMetricsSection({ onSyncNow, onExport }: Financi
       {fetchError && (
         <div className="text-center py-10">
           <p className="text-sm text-red-500 mb-2">Failed to load dashboard metrics.</p>
-          <button onClick={fetchData} className="text-xs text-blue-600 underline">Retry</button>
+          <button onClick={handleRefresh} className="text-xs text-blue-600 underline">Retry</button>
         </div>
       )}
 
@@ -375,7 +318,7 @@ export default function FinancialMetricsSection({ onSyncNow, onExport }: Financi
             <KPICard label="Total Revenue" value={data.kpis.totalRevenue} change={data.kpis.revenueChange} format="currency" />
             <KPICard label="Total Cost" value={data.kpis.totalCost} change={data.kpis.costChange} format="currency" />
             <KPICard label="Net Profit" value={data.kpis.netProfit} change={data.kpis.profitChange} format="currency" />
-            <ROICard roi={data.kpis.roi} roiChange={data.kpis.roiChange} kpis={data.kpis} dateFrom={getRange()?.from ?? ''} dateTo={getRange()?.to ?? ''} loading={false} />
+            <ROICard roi={data.kpis.roi} roiChange={data.kpis.roiChange} kpis={data.kpis} dateFrom={dateRange.dateFrom} dateTo={dateRange.dateTo} loading={false} />
           </div>
 
           {/* Daily Profit Trend — dedicated section with metric toggle */}
