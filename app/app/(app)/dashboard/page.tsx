@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef } from 'react';
+import { format, subDays } from 'date-fns';
 import ManualRefreshPanel from '@/features/manual-refresh/components/ManualRefreshPanel';
 import SyncStatusPanel from '@/features/sync-status/components/SyncStatusPanel';
 import GeoBreakdownSection from '@/features/geo-breakdown/components/GeoBreakdownSection';
@@ -12,6 +13,7 @@ import { Download, ChevronDown } from 'lucide-react';
 import ExoClickNetworkTab from '@/features/exoclick/components/ExoClickNetworkTab';
 import ZeydooNetworkTab from '@/features/zeydoo/components/ZeydooNetworkTab';
 import FinancialMetricsSection from '@/features/dashboard/components/FinancialMetricsSection';
+import PerNetworkAnalyticsTabsSection from '@/features/network-analytics/components/PerNetworkAnalyticsTabsSection';
 
 type DashboardTab = 'overview' | 'compare' | 'exoclick' | 'rollerads' | 'zeydoo' | 'propush';
 
@@ -29,6 +31,9 @@ export default function DashboardPage() {
   const { exportModalOpen, setExportModalOpen } = useDashboardStore();
   const [syncPanelOpen, setSyncPanelOpen] = useState(false);
   const syncRef = useRef<HTMLDivElement>(null);
+  const today = new Date();
+  const defaultDateFrom = format(subDays(today, 29), 'yyyy-MM-dd');
+  const defaultDateTo = format(today, 'yyyy-MM-dd');
 
   return (
     <div className="space-y-6">
@@ -82,6 +87,8 @@ export default function DashboardPage() {
               setTimeout(() => syncRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
             }}
           />
+
+          <PerNetworkAnalyticsTabsSection dateFrom={defaultDateFrom} dateTo={defaultDateTo} />
 
           {/* Collapsible ManualRefreshPanel */}
           <div ref={syncRef} className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
