@@ -17,6 +17,8 @@ import {
 import { useAuth } from "@/contexts/AuthContext";
 import MobileNavigationDrawer from "./MobileNavigationDrawer";
 import MobileBottomNavBar from "./MobileBottomNavBar";
+import BellIconTrigger from "@/features/notifications/components/BellIconTrigger";
+import NotificationCenterPanel from "@/features/notifications/components/NotificationCenterPanel";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -107,6 +109,9 @@ export default function AppShell({ children }: AppShellProps) {
 
           <div className="flex-1 lg:flex-none" />
 
+          {/* Bell icon */}
+          <BellIconTrigger />
+
           {/* User menu */}
           <div className="relative">
             <button
@@ -170,6 +175,9 @@ export default function AppShell({ children }: AppShellProps) {
 
       {/* Mobile bottom nav bar */}
       <MobileBottomNavBar />
+
+      {/* Notification slide-over panel */}
+      <NotificationCenterPanel />
     </div>
   );
 }
