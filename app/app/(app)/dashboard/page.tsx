@@ -1,5 +1,6 @@
 import ManualRefreshPanel from '@/features/manual-refresh/components/ManualRefreshPanel';
 import SyncStatusPanel from '@/features/sync-status/components/SyncStatusPanel';
+import GeoBreakdownSection from '@/features/geo-breakdown/components/GeoBreakdownSection';
 
 export default function DashboardPage() {
   return (
@@ -21,6 +22,8 @@ export default function DashboardPage() {
           <SyncStatusPanel />
         </div>
       </div>
+
+      <GeoBreakdownSection />
     </div>
   );
 }
