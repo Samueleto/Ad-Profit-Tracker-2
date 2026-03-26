@@ -1,14 +1,13 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
 import { Loader2, AlertCircle, RefreshCw } from 'lucide-react';
-import { getAuth } from 'firebase/auth';
 import { useDateRangeStore } from '@/store/dateRangeStore';
-import type { ComparisonMetric, ComparisonResponse } from '../types';
+import type { ComparisonMetric } from '../types';
 import NetworkComparisonCard from './NetworkComparisonCard';
 import ComparisonBarChart from './ComparisonBarChart';
 import EfficiencyTable from './EfficiencyTable';
 import NetworkRankingStrip from './NetworkRankingStrip';
+import { useComparativeAnalysis } from '../hooks/useComparativeAnalysis';
 
 const NETWORK_LABELS: Record<string, string> = {
   exoclick: 'ExoClick',
@@ -27,76 +26,21 @@ const METRIC_OPTIONS: { value: ComparisonMetric; label: string }[] = [
   { value: 'clicks', label: 'Clicks' },
 ];
 
-async function authFetch(path: string): Promise<Response> {
-  const auth = getAuth();
-  let token = await auth.currentUser?.getIdToken();
-  let res = await fetch(path, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    cache: 'no-store',
-  });
-  if (res.status === 401) {
-    token = await auth.currentUser?.getIdToken(true);
-    res = await fetch(path, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      cache: 'no-store',
-    });
-  }
-  return res;
-}
-
 interface ComparativeNetworkAnalysisTabProps {
   onNetworkSelect: (networkId: string) => void;
 }
 
-type FetchState = 'idle' | 'loading' | 'success' | 'empty' | 'error' | 'forbidden';
-
 export default function ComparativeNetworkAnalysisTab({ onNetworkSelect }: ComparativeNetworkAnalysisTabProps) {
   const { fromDate, toDate } = useDateRangeStore();
-  const [metric, setMetric] = useState<ComparisonMetric>('revenue');
-  const [data, setData] = useState<ComparisonResponse | null>(null);
-  const [fetchState, setFetchState] = useState<FetchState>('idle');
-  const [syncingAll, setSyncingAll] = useState(false);
-
-  const fetchData = useCallback(async () => {
-    setFetchState('loading');
-    try {
-      const res = await authFetch(
-        `/api/networks/comparison?from=${fromDate}&to=${toDate}&metric=${metric}`
-      );
-      if (res.status === 403) { setFetchState('forbidden'); return; }
-      if (res.status === 404) { setFetchState('empty'); return; }
-      if (!res.ok) { setFetchState('error'); return; }
-      const json: ComparisonResponse = await res.json();
-      if (!json.networks || json.networks.length === 0) { setFetchState('empty'); return; }
-      setData(json);
-      setFetchState('success');
-    } catch {
-      setFetchState('error');
-    }
-  }, [fromDate, toDate, metric]);
-
-  // Lazy: only fetch when first rendered
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  const handleSyncAll = async () => {
-    setSyncingAll(true);
-    try {
-      const auth = getAuth();
-      const token = await auth.currentUser?.getIdToken();
-      await fetch('/api/sync/manual', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({}),
-      });
-    } finally {
-      setSyncingAll(false);
-    }
-  };
+  const {
+    selectedMetric: metric,
+    setSelectedMetric: setMetric,
+    comparisonData: data,
+    loadStatus: fetchState,
+    isSyncing: syncingAll,
+    fetchComparisonData: fetchData,
+    syncAllNetworks: handleSyncAll,
+  } = useComparativeAnalysis(fromDate, toDate);
 
   return (
     <div className="space-y-5">
@@ -129,14 +73,6 @@ export default function ComparativeNetworkAnalysisTab({ onNetworkSelect }: Compa
       </div>
 
       {/* State rendering */}
-      {fetchState === 'forbidden' && (
-        <div className="flex items-center gap-3 px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-700 dark:text-red-400">
-          <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          Access Denied.{' '}
-          <a href="/dashboard" className="underline">Go to Dashboard</a>
-        </div>
-      )}
-
       {fetchState === 'error' && (
         <div className="flex items-center gap-3 px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-700 dark:text-red-400">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
