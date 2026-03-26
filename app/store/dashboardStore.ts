@@ -15,6 +15,7 @@ interface NotificationState {
 
 export type MetricFocus = 'revenue' | 'cost' | 'profit' | 'roi';
 export type DataQuality = 'all' | 'anomalies' | 'clean';
+export type SyncHealth = 'healthy' | 'degraded' | 'critical';
 
 interface FilterState {
   selectedNetworks: string[];
@@ -55,6 +56,10 @@ interface DashboardStore {
   // Active tab
   activeTab: string;
   setActiveTab: (tab: string) => void;
+
+  // Sync health
+  health: SyncHealth;
+  setHealth: (health: SyncHealth) => void;
 }
 
 const defaultFilters: FilterState = {
@@ -101,6 +106,9 @@ export const useDashboardStore = create<DashboardStore>()(
 
       activeTab: "overview",
       setActiveTab: (tab) => set({ activeTab: tab }),
+
+      health: 'healthy',
+      setHealth: (health) => set({ health }),
     }),
     {
       name: "dashboard-store",

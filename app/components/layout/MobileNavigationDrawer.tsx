@@ -26,6 +26,18 @@ export default function MobileNavigationDrawer({ open, onClose }: MobileNavigati
   const { theme, setTheme } = useTheme();
   const touchStartX = useRef<number>(0);
 
+  // Lock body scroll when drawer is open
+  useEffect(() => {
+    if (open) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [open]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();

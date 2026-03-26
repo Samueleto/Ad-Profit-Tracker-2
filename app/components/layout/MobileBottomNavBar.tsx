@@ -14,10 +14,10 @@ const TABS = [
 export default function MobileBottomNavBar() {
   const pathname = usePathname();
   const router = useRouter();
-  const { notifications } = useDashboardStore();
+  const health = useDashboardStore(s => s.health);
 
-  // Using unreadCount as a proxy for health alert; in production this would come from sync health
-  const showNetworkBadge = notifications.unreadCount > 0;
+  // Show red badge on Networks tab when sync health is degraded or critical
+  const showNetworkBadge = health === 'degraded' || health === 'critical';
 
   return (
     <nav
