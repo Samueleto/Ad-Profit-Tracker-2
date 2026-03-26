@@ -20,6 +20,8 @@ export type SyncHealth = 'healthy' | 'degraded' | 'critical';
 interface FilterState {
   selectedNetworks: string[];
   selectedCountries: string[];
+  stagedNetworks: string[];
+  stagedCountries: string[];
   minRevenue: number | null;
   maxRevenue: number | null;
   selectedMetric: MetricFocus;
@@ -65,10 +67,14 @@ interface DashboardStore {
   filters: FilterState;
   setSelectedNetworks: (networks: string[]) => void;
   setSelectedCountries: (countries: string[]) => void;
+  setStagedNetworks: (networks: string[]) => void;
+  setStagedCountries: (countries: string[]) => void;
+  applyFilters: () => void;
   setRevenueRange: (min: number | null, max: number | null) => void;
   setSelectedMetric: (metric: MetricFocus) => void;
   setDataQuality: (quality: DataQuality) => void;
   setSearchQuery: (query: string) => void;
+  clearAllFilters: () => void;
   resetFilters: () => void;
 
   // Active tab
@@ -83,6 +89,8 @@ interface DashboardStore {
 const defaultFilters: FilterState = {
   selectedNetworks: [],
   selectedCountries: [],
+  stagedNetworks: [],
+  stagedCountries: [],
   minRevenue: null,
   maxRevenue: null,
   selectedMetric: 'profit',
@@ -122,6 +130,18 @@ export const useDashboardStore = create<DashboardStore>()(
         set((state) => ({ filters: { ...state.filters, selectedNetworks: networks } })),
       setSelectedCountries: (countries) =>
         set((state) => ({ filters: { ...state.filters, selectedCountries: countries } })),
+      setStagedNetworks: (networks) =>
+        set((state) => ({ filters: { ...state.filters, stagedNetworks: networks } })),
+      setStagedCountries: (countries) =>
+        set((state) => ({ filters: { ...state.filters, stagedCountries: countries } })),
+      applyFilters: () =>
+        set((state) => ({
+          filters: {
+            ...state.filters,
+            selectedNetworks: state.filters.stagedNetworks,
+            selectedCountries: state.filters.stagedCountries,
+          },
+        })),
       setRevenueRange: (min, max) =>
         set((state) => ({ filters: { ...state.filters, minRevenue: min, maxRevenue: max } })),
       setSelectedMetric: (metric) =>
@@ -130,6 +150,7 @@ export const useDashboardStore = create<DashboardStore>()(
         set((state) => ({ filters: { ...state.filters, dataQuality: quality } })),
       setSearchQuery: (query) =>
         set((state) => ({ filters: { ...state.filters, searchQuery: query } })),
+      clearAllFilters: () => set({ filters: defaultFilters }),
       resetFilters: () => set({ filters: defaultFilters }),
 
       activeTab: "overview",
@@ -148,3 +169,15 @@ export const useDashboardStore = create<DashboardStore>()(
     }
   )
 );
+
+/** Derived selector: count of non-default active filter dimensions */
+export const useActiveFilterCount = () =>
+  useDashboardStore((state) => {
+    let count = 0;
+    if (state.filters.selectedNetworks.length > 0) count++;
+    if (state.filters.selectedCountries.length > 0) count++;
+    if (state.filters.selectedMetric !== 'profit') count++;
+    if (state.filters.dataQuality !== 'all') count++;
+    if (state.filters.searchQuery) count++;
+    return count;
+  });
