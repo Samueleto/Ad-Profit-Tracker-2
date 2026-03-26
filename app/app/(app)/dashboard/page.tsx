@@ -9,6 +9,7 @@ import DateRangeToolbar from '@/features/date-range/components/DateRangeToolbar'
 import ExportModal from '@/features/excel-export/components/ExportModal';
 import { useDashboardStore } from '@/store/dashboardStore';
 import { Download } from 'lucide-react';
+import ExoClickNetworkTab from '@/features/exoclick/components/ExoClickNetworkTab';
 
 type DashboardTab = 'overview' | 'compare' | 'exoclick' | 'rollerads' | 'zeydoo' | 'propush';
 
@@ -88,11 +89,7 @@ export default function DashboardPage() {
         />
       )}
 
-      {activeTab === 'exoclick' && (
-        <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-          ExoClick network details coming soon.
-        </div>
-      )}
+      {activeTab === 'exoclick' && <ExoClickNetworkTab />}
 
       {activeTab === 'rollerads' && (
         <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
