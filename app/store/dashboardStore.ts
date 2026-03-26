@@ -13,11 +13,17 @@ interface NotificationState {
   panelOpen: boolean;
 }
 
+export type MetricFocus = 'revenue' | 'cost' | 'profit' | 'roi';
+export type DataQuality = 'all' | 'anomalies' | 'clean';
+
 interface FilterState {
   selectedNetworks: string[];
   selectedCountries: string[];
   minRevenue: number | null;
   maxRevenue: number | null;
+  selectedMetric: MetricFocus;
+  dataQuality: DataQuality;
+  searchQuery: string;
 }
 
 interface DashboardStore {
@@ -41,6 +47,9 @@ interface DashboardStore {
   setSelectedNetworks: (networks: string[]) => void;
   setSelectedCountries: (countries: string[]) => void;
   setRevenueRange: (min: number | null, max: number | null) => void;
+  setSelectedMetric: (metric: MetricFocus) => void;
+  setDataQuality: (quality: DataQuality) => void;
+  setSearchQuery: (query: string) => void;
   resetFilters: () => void;
 
   // Active tab
@@ -53,6 +62,9 @@ const defaultFilters: FilterState = {
   selectedCountries: [],
   minRevenue: null,
   maxRevenue: null,
+  selectedMetric: 'profit',
+  dataQuality: 'all',
+  searchQuery: '',
 };
 
 export const useDashboardStore = create<DashboardStore>()(
@@ -79,6 +91,12 @@ export const useDashboardStore = create<DashboardStore>()(
         set((state) => ({ filters: { ...state.filters, selectedCountries: countries } })),
       setRevenueRange: (min, max) =>
         set((state) => ({ filters: { ...state.filters, minRevenue: min, maxRevenue: max } })),
+      setSelectedMetric: (metric) =>
+        set((state) => ({ filters: { ...state.filters, selectedMetric: metric } })),
+      setDataQuality: (quality) =>
+        set((state) => ({ filters: { ...state.filters, dataQuality: quality } })),
+      setSearchQuery: (query) =>
+        set((state) => ({ filters: { ...state.filters, searchQuery: query } })),
       resetFilters: () => set({ filters: defaultFilters }),
 
       activeTab: "overview",

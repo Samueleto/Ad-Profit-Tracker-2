@@ -15,6 +15,7 @@ import ZeydooNetworkTab from '@/features/zeydoo/components/ZeydooNetworkTab';
 import FinancialMetricsSection from '@/features/dashboard/components/FinancialMetricsSection';
 import PerNetworkAnalyticsTabsSection from '@/features/network-analytics/components/PerNetworkAnalyticsTabsSection';
 import PerformanceBenchmarkingTab from '@/features/benchmarking/components/PerformanceBenchmarkingTab';
+import FilterToolbar from '@/features/data-filtering/components/FilterToolbar';
 
 type DashboardTab = 'overview' | 'compare' | 'benchmarks' | 'exoclick' | 'rollerads' | 'zeydoo' | 'propush';
 
@@ -59,6 +60,9 @@ export default function DashboardPage() {
 
       {/* Date range toolbar — sticky */}
       <DateRangeToolbar />
+
+      {/* Filter toolbar — sticky, below date range */}
+      <FilterToolbar dateFrom={defaultDateFrom} dateTo={defaultDateTo} />
 
       {/* Tab bar */}
       <div className="border-b border-gray-200 dark:border-gray-700">
