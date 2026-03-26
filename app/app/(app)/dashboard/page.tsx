@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import ManualRefreshPanel from '@/features/manual-refresh/components/ManualRefreshPanel';
 import SyncStatusPanel from '@/features/sync-status/components/SyncStatusPanel';
 import GeoBreakdownSection from '@/features/geo-breakdown/components/GeoBreakdownSection';
@@ -8,9 +8,10 @@ import ComparativeNetworkAnalysisTab from '@/features/comparative-analysis/compo
 import DateRangeToolbar from '@/features/date-range/components/DateRangeToolbar';
 import ExportModal from '@/features/excel-export/components/ExportModal';
 import { useDashboardStore } from '@/store/dashboardStore';
-import { Download } from 'lucide-react';
+import { Download, ChevronDown } from 'lucide-react';
 import ExoClickNetworkTab from '@/features/exoclick/components/ExoClickNetworkTab';
 import ZeydooNetworkTab from '@/features/zeydoo/components/ZeydooNetworkTab';
+import FinancialMetricsSection from '@/features/dashboard/components/FinancialMetricsSection';
 
 type DashboardTab = 'overview' | 'compare' | 'exoclick' | 'rollerads' | 'zeydoo' | 'propush';
 
@@ -26,6 +27,8 @@ const TABS: { id: DashboardTab; label: string }[] = [
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   const { exportModalOpen, setExportModalOpen } = useDashboardStore();
+  const [syncPanelOpen, setSyncPanelOpen] = useState(false);
+  const syncRef = useRef<HTMLDivElement>(null);
 
   return (
     <div className="space-y-6">
@@ -72,15 +75,29 @@ export default function DashboardPage() {
       {/* Tab panels */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <div className="lg:col-span-1">
-              <ManualRefreshPanel />
-            </div>
-            <div className="lg:col-span-2">
-              <SyncStatusPanel />
-            </div>
+          <FinancialMetricsSection
+            onExport={() => setExportModalOpen(true)}
+            onSyncNow={() => {
+              setSyncPanelOpen(true);
+              setTimeout(() => syncRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+            }}
+          />
+
+          {/* Collapsible ManualRefreshPanel */}
+          <div ref={syncRef} className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+            <button
+              onClick={() => setSyncPanelOpen(p => !p)}
+              className="w-full flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors text-sm font-medium text-gray-700 dark:text-gray-300"
+            >
+              Manual Sync Controls
+              <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${syncPanelOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {syncPanelOpen && (
+              <div className="border-t border-gray-100 dark:border-gray-800 p-4">
+                <ManualRefreshPanel />
+              </div>
+            )}
           </div>
-          <GeoBreakdownSection />
         </div>
       )}
 
