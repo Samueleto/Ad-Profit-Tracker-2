@@ -46,6 +46,7 @@ export default function ManualRefreshPanel() {
   const [allRateLimit, setAllRateLimit] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [noNetworks, setNoNetworks] = useState(false);
+  const [confirmingAll, setConfirmingAll] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -179,19 +180,38 @@ export default function ManualRefreshPanel() {
         </button>
       </div>
 
-      {/* Refresh All button */}
-      <button
-        onClick={handleRefreshAll}
-        disabled={syncingAll || allRateLimit !== null}
-        className="w-full flex items-center justify-center gap-2 py-2 px-4 mb-4 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 transition-colors"
-      >
-        {syncingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
-        {syncingAll
-          ? 'Syncing…'
-          : allRateLimit !== null
-          ? `Available in ${allRateLimit}s`
-          : 'Refresh All Data Now'}
-      </button>
+      {/* Refresh All button with confirmation tooltip */}
+      <div className="relative mb-4">
+        <button
+          onClick={() => {
+            if (!confirmingAll) { setConfirmingAll(true); return; }
+            setConfirmingAll(false);
+            handleRefreshAll();
+          }}
+          disabled={syncingAll || allRateLimit !== null}
+          className="w-full flex items-center justify-center gap-2 py-2 px-4 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 transition-colors"
+        >
+          {syncingAll ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
+          {syncingAll
+            ? 'Syncing…'
+            : allRateLimit !== null
+            ? `Available in ${allRateLimit}s`
+            : confirmingAll
+            ? 'Confirm Sync All'
+            : 'Refresh All Data Now'}
+        </button>
+        {confirmingAll && !syncingAll && (
+          <div className="absolute left-0 right-0 top-full mt-1 z-10 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-lg px-3 py-2 text-xs text-amber-800 dark:text-amber-300 flex items-center justify-between gap-2">
+            <span>This will sync all active networks — continue?</span>
+            <button
+              onClick={() => setConfirmingAll(false)}
+              className="text-amber-600 dark:text-amber-400 hover:underline flex-shrink-0"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Network rows */}
       <div className="divide-y divide-gray-100 dark:divide-gray-800">
