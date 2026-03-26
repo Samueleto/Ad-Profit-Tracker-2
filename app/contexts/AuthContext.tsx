@@ -146,6 +146,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     });
+    // Sign out from Firebase auth so onAuthStateChanged fires and clears state
+    await firebaseSignOut(auth);
     setUser(null);
     setFirebaseUser(null);
     router.push("/");
