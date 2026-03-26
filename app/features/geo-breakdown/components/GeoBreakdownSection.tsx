@@ -1,33 +1,16 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { Search } from 'lucide-react';
-import { getAuth } from 'firebase/auth';
 import { useDateRangeStore } from '@/store/dateRangeStore';
-import type { GeoCountryRow, MetricToggle, TopNOption, GeoBreakdownResponse } from '../types';
+import type { GeoCountryRow, MetricToggle, TopNOption } from '../types';
 import GeoColorRow from './GeoColorRow';
 import MetricShareBar from './MetricShareBar';
 import GeoInsightsStrip from './GeoInsightsStrip';
 import GeoTableSkeleton from './GeoTableSkeleton';
 import NetworkSubRow from './NetworkSubRow';
 import GeoCountryDrilldownModal from './GeoCountryDrilldownModal';
-
-async function authFetch(path: string): Promise<Response> {
-  const auth = getAuth();
-  let token = await auth.currentUser?.getIdToken();
-  let res = await fetch(path, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    cache: 'no-store',
-  });
-  if (res.status === 401) {
-    token = await auth.currentUser?.getIdToken(true);
-    res = await fetch(path, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      cache: 'no-store',
-    });
-  }
-  return res;
-}
+import { useGeoBreakdown } from '../hooks/useGeoBreakdown';
 
 function formatCurrency(value: number | null): string {
   if (value === null) return '—';
@@ -49,33 +32,12 @@ const METRIC_OPTIONS: MetricToggle[] = ['Revenue', 'Cost', 'Profit'];
 
 export default function GeoBreakdownSection() {
   const { fromDate, toDate } = useDateRangeStore();
-  const [countries, setCountries] = useState<GeoCountryRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { countries, loading } = useGeoBreakdown(fromDate, toDate);
   const [metric, setMetric] = useState<MetricToggle>('Profit');
   const [topN, setTopN] = useState<TopNOption>(10);
   const [search, setSearch] = useState('');
   const [expandedNetworks, setExpandedNetworks] = useState<Set<string>>(new Set());
   const [drilldownCountry, setDrilldownCountry] = useState<GeoCountryRow | null>(null);
-
-  const fetchData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const res = await authFetch(
-        `/api/stats/geo-breakdown?from=${fromDate}&to=${toDate}`
-      );
-      if (!res.ok) { setCountries([]); return; }
-      const data: GeoBreakdownResponse = await res.json();
-      setCountries(data.countries ?? []);
-    } catch {
-      setCountries([]);
-    } finally {
-      setLoading(false);
-    }
-  }, [fromDate, toDate]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
 
   const sortedAndFiltered = useMemo(() => {
     const filtered = countries.filter(c =>
