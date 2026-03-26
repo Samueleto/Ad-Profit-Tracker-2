@@ -4,8 +4,9 @@ import { useState } from 'react';
 import TeamManagementPage from '@/features/team/components/TeamManagementPage';
 import NetworkConfigTab from '@/features/network-config/components/NetworkConfigTab';
 import ActivityLogTab from '@/features/audit-log/components/ActivityLogTab';
+import ThemeSettingsSection from '@/features/theming/components/ThemeSettingsSection';
 
-type SettingsTab = 'general' | 'team' | 'networks' | 'activity';
+type SettingsTab = 'general' | 'team' | 'networks' | 'activity' | 'appearance';
 
 interface SettingsTabsClientProps {
   children: React.ReactNode; // The general settings content (server-rendered)
@@ -31,6 +32,7 @@ export default function SettingsTabsClient({ children }: SettingsTabsClientProps
             { id: 'team' as const, label: 'Team' },
             { id: 'networks' as const, label: 'Networks' },
             { id: 'activity' as const, label: 'Activity Log' },
+            { id: 'appearance' as const, label: 'Appearance' },
           ]).map(tab => (
             <button
               key={tab.id}
@@ -51,6 +53,7 @@ export default function SettingsTabsClient({ children }: SettingsTabsClientProps
       {activeTab === 'team' && <TeamManagementPage />}
       {activeTab === 'networks' && <NetworkConfigTab />}
       {activeTab === 'activity' && <ActivityLogTab />}
+      {activeTab === 'appearance' && <ThemeSettingsSection />}
     </div>
   );
 }
