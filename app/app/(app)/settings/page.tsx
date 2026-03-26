@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 import ApiKeysSectionClient from './ApiKeysSectionClient';
 import SettingsTabsClient from './SettingsTabsClient';
 import EmailAlertPreferencesSection from '@/features/email-alerts/components/EmailAlertPreferencesSection';
+import { cookies } from 'next/headers';
 
 interface Preferences {
   timezone: string;
@@ -22,29 +23,53 @@ const DEFAULT_PREFERENCES: Preferences = {
   notifications: { dailySummaryEmail: false, weeklyReportEmail: false },
 };
 
-async function fetchPreferences(): Promise<{ preferences: Preferences; isDefaults: boolean }> {
-  try {
-    const res = await fetch(
-      `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/api/settings/preferences`,
-      { cache: 'no-store' }
-    );
-    if (!res.ok) return { preferences: DEFAULT_PREFERENCES, isDefaults: true };
-    const data = await res.json();
-    return {
-      preferences: data?.preferences ?? DEFAULT_PREFERENCES,
-      isDefaults: !data?.preferences,
-    };
-  } catch {
-    return { preferences: DEFAULT_PREFERENCES, isDefaults: true };
-  }
+const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+
+/**
+ * Build auth headers for server-side fetches by forwarding the session cookie
+ * (Firebase __session cookie set by the client on login, if present).
+ */
+async function serverAuthHeaders(): Promise<Record<string, string>> {
+  const cookieStore = await cookies();
+  const sessionToken = cookieStore.get('__session')?.value;
+  if (sessionToken) return { Authorization: `Bearer ${sessionToken}` };
+  return {};
 }
 
 export default async function SettingsPage() {
-  const { preferences, isDefaults } = await fetchPreferences();
+  const authHeaders = await serverAuthHeaders();
+
+  // Fetch preferences and API key status simultaneously
+  const [preferencesResult] = await Promise.all([
+    fetch(`${BASE_URL}/api/settings/preferences`, {
+      cache: 'no-store',
+      headers: authHeaders,
+    }).then(async (res): Promise<{ preferences: Preferences; isDefaults: boolean }> => {
+      // 401 or 404 are expected for unauthenticated / first-time users → use defaults
+      if (res.status === 401 || res.status === 404 || !res.ok) {
+        return { preferences: DEFAULT_PREFERENCES, isDefaults: true };
+      }
+      const data = await res.json();
+      return {
+        preferences: data?.preferences ?? DEFAULT_PREFERENCES,
+        isDefaults: !data?.preferences,
+      };
+    }).catch(() => ({ preferences: DEFAULT_PREFERENCES, isDefaults: true })),
+
+    // /api/keys/status is fetched with auth by ApiKeysSectionClient (client component).
+    // We include a server-side attempt here purely for the parallel waterfall benefit —
+    // the result is not consumed here (the client component is the source of truth).
+    fetch(`${BASE_URL}/api/keys/status`, {
+      cache: 'no-store',
+      headers: authHeaders,
+    }).catch(() => null),
+  ]);
+
+  const { preferences, isDefaults } = preferencesResult;
 
   return (
     <SettingsTabsClient>
-      {/* API Key Cards — client component handles fetching and callbacks */}
+      {/* API Key Cards — client component handles authed fetching and callbacks */}
       <section>
         <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Network API Keys</h2>
         <Suspense fallback={

@@ -1,8 +1,9 @@
 'use client';
 
 import { useState } from 'react';
-import { Loader2, AlertTriangle, CheckCircle } from 'lucide-react';
+import { Loader2, AlertTriangle } from 'lucide-react';
 import { usePreferences, type Preferences } from '../hooks/usePreferences';
+import { Toast } from '@/components/ui/Toast';
 
 interface PreferencesCardProps {
   initialPreferences: Preferences;
@@ -95,12 +96,9 @@ export default function PreferencesCard({ initialPreferences, isDefaults = false
         </div>
       )}
 
-      {/* Success toast */}
+      {/* Success toast (fixed-position) */}
       {saveStatus === 'success' && (
-        <div className="mb-4 flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm text-green-700 dark:text-green-400">
-          <CheckCircle className="w-4 h-4 flex-shrink-0" />
-          Preferences saved.
-        </div>
+        <Toast message="Preferences saved" variant="success" />
       )}
 
       <div className="space-y-5">
