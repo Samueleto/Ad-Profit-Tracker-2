@@ -5,6 +5,7 @@ import ManualRefreshPanel from '@/features/manual-refresh/components/ManualRefre
 import SyncStatusPanel from '@/features/sync-status/components/SyncStatusPanel';
 import GeoBreakdownSection from '@/features/geo-breakdown/components/GeoBreakdownSection';
 import ComparativeNetworkAnalysisTab from '@/features/comparative-analysis/components/ComparativeNetworkAnalysisTab';
+import DateRangeToolbar from '@/features/date-range/components/DateRangeToolbar';
 
 type DashboardTab = 'overview' | 'compare' | 'exoclick' | 'rollerads' | 'zeydoo' | 'propush';
 
@@ -30,6 +31,9 @@ export default function DashboardPage() {
           View your ad network profits, trends, and analytics.
         </p>
       </div>
+
+      {/* Date range toolbar — sticky */}
+      <DateRangeToolbar />
 
       {/* Tab bar */}
       <div className="border-b border-gray-200 dark:border-gray-700">
