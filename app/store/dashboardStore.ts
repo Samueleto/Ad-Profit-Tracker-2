@@ -27,6 +27,14 @@ interface FilterState {
   searchQuery: string;
 }
 
+export type ExportStatus = 'idle' | 'loading' | 'exporting' | 'success' | 'error';
+
+export interface PreviewData {
+  sheets: Array<{ name: string; rowCount: number }>;
+  hasData: boolean;
+  totalRows: number;
+}
+
 interface DashboardStore {
   // Date range
   dateRange: DateRange;
@@ -37,6 +45,16 @@ interface DashboardStore {
   // Export modal
   exportModalOpen: boolean;
   setExportModalOpen: (open: boolean) => void;
+  openExportModal: () => void;
+  closeExportModal: () => void;
+  exportStatus: ExportStatus;
+  setExportStatus: (status: ExportStatus) => void;
+  exportError: string | null;
+  setExportError: (message: string | null) => void;
+  previewData: PreviewData | null;
+  setPreviewData: (data: PreviewData | null) => void;
+  previewLoading: boolean;
+  setPreviewLoading: (loading: boolean) => void;
 
   // Notification state
   notifications: NotificationState;
@@ -82,6 +100,16 @@ export const useDashboardStore = create<DashboardStore>()(
 
       exportModalOpen: false,
       setExportModalOpen: (open) => set({ exportModalOpen: open }),
+      openExportModal: () => set({ exportModalOpen: true, exportStatus: 'idle', exportError: null }),
+      closeExportModal: () => set({ exportModalOpen: false, exportError: null }),
+      exportStatus: 'idle',
+      setExportStatus: (status) => set({ exportStatus: status }),
+      exportError: null,
+      setExportError: (message) => set({ exportError: message }),
+      previewData: null,
+      setPreviewData: (data) => set({ previewData: data }),
+      previewLoading: false,
+      setPreviewLoading: (loading) => set({ previewLoading: loading }),
 
       notifications: { unreadCount: 0, panelOpen: false },
       setNotificationPanelOpen: (open) =>
