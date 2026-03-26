@@ -12,6 +12,7 @@ import InvitationTableSkeleton from './InvitationTableSkeleton';
 import ConfirmDialog from './ConfirmDialog';
 import RoleSelector from './RoleSelector';
 import InviteMemberModal from './InviteMemberModal';
+import PermissionsTab from '@/features/rbac/components/PermissionsTab';
 
 async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const auth = getAuth();
@@ -33,8 +34,10 @@ async function authFetch(path: string, init: RequestInit = {}): Promise<Response
 }
 
 type FetchState = 'loading' | 'success' | 'error_403' | 'error_404' | 'error_500';
+type TeamTab = 'members' | 'permissions';
 
 export default function TeamManagementPage() {
+  const [activeTab, setActiveTab] = useState<TeamTab>('members');
   const [fetchState, setFetchState] = useState<FetchState>('loading');
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [invitations, setInvitations] = useState<WorkspaceInvitationSafe[]>([]);
@@ -199,6 +202,28 @@ export default function TeamManagementPage() {
 
   return (
     <div className="space-y-6">
+      {/* Tab bar */}
+      <div className="flex border-b border-gray-200 dark:border-gray-700">
+        {(['members', 'permissions'] as TeamTab[]).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`py-2 px-4 text-sm font-medium border-b-2 capitalize transition-colors ${
+              activeTab === tab
+                ? 'border-blue-600 text-blue-600 dark:text-blue-400'
+                : 'border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
+            }`}
+          >
+            {tab}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'permissions' && (
+        <PermissionsTab currentUserRole={currentUserRole} />
+      )}
+
+      {activeTab === 'members' && (<>
       {/* Workspace Settings (collapsible) */}
       <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
         <button
@@ -351,6 +376,8 @@ export default function TeamManagementPage() {
           </button>
         </div>
       )}
+
+      </>)}
 
       {/* Role change modal */}
       {roleChangeTarget && (
