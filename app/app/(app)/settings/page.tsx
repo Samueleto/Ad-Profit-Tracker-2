@@ -3,6 +3,7 @@ import ApiKeyCardSkeleton from '@/features/settings/components/ApiKeyCardSkeleto
 import { Suspense } from 'react';
 import ApiKeysSectionClient from './ApiKeysSectionClient';
 import SettingsTabsClient from './SettingsTabsClient';
+import EmailAlertPreferencesSection from '@/features/email-alerts/components/EmailAlertPreferencesSection';
 
 interface Preferences {
   timezone: string;
@@ -59,6 +60,11 @@ export default async function SettingsPage() {
       <section>
         <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">General Preferences</h2>
         <PreferencesCard initialPreferences={preferences} isDefaults={isDefaults} />
+      </section>
+
+      {/* Email Alert Preferences */}
+      <section>
+        <EmailAlertPreferencesSection />
       </section>
     </SettingsTabsClient>
   );
