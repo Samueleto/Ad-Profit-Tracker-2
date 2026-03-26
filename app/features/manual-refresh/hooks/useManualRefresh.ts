@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { getAuth } from 'firebase/auth';
+import { useRouter } from 'next/navigation';
 import { SUPPORTED_NETWORKS, type NetworkId } from '@/lib/constants';
 import type { SyncStatus } from '../components/SyncStatusBadge';
 
@@ -61,9 +62,11 @@ function makeInitialNetworkStates(): NetworkSyncState[] {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useManualRefresh() {
+  const router = useRouter();
   const [networkStates, setNetworkStates] = useState<NetworkSyncState[]>(makeInitialNetworkStates());
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [triggeredNetworks, setTriggeredNetworks] = useState<Set<NetworkId>>(new Set());
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   // Rate limits: per-network and "all"
   const [networkRateLimits, setNetworkRateLimits] = useState<Partial<Record<NetworkId, RateLimitState>>>({});
@@ -88,12 +91,27 @@ export function useManualRefresh() {
     triggeredRef.current = triggeredNetworks;
   }, [triggeredNetworks]);
 
+  // ─── Session expiry redirect ────────────────────────────────────────────────
+
+  useEffect(() => {
+    if (sessionExpired) {
+      router.replace('/');
+    }
+  }, [sessionExpired, router]);
+
+  const checkSessionExpiry = useCallback((status: number) => {
+    if (status === 401) setSessionExpired(true);
+  }, []);
+
   // ─── Fetch status ──────────────────────────────────────────────────────────
 
   const fetchStatus = useCallback(async () => {
     try {
       const res = await authFetch('/api/scheduled/sync-status');
-      if (!res.ok) return;
+      if (!res.ok) {
+        checkSessionExpiry(res.status);
+        return;
+      }
       const data = await res.json();
       const statuses: Array<{
         networkId: NetworkId;
@@ -236,7 +254,7 @@ export function useManualRefresh() {
       startAllRateLimitCountdown(isNaN(retryAfter) ? 60 : retryAfter);
       return;
     }
-    if (!res.ok) return;
+    if (!res.ok) { checkSessionExpiry(res.status); return; }
 
     setNetworkStates(prev => prev.map(n => ({
       ...n,
@@ -260,7 +278,7 @@ export function useManualRefresh() {
       startNetworkRateLimitCountdown(networkId, isNaN(retryAfter) ? 60 : retryAfter);
       return;
     }
-    if (!res.ok) return;
+    if (!res.ok) { checkSessionExpiry(res.status); return; }
 
     setNetworkStates(prev => prev.map(n =>
       n.networkId === networkId
@@ -303,5 +321,6 @@ export function useManualRefresh() {
     historyData,
     openHistory,
     closeHistory,
+    sessionExpired,
   };
 }

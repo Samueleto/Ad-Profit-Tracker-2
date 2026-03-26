@@ -1,11 +1,13 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 import { Loader2, RefreshCw } from 'lucide-react';
 import { SUPPORTED_NETWORKS } from '@/lib/constants';
 import NetworkSyncRow from './NetworkSyncRow';
 import SyncHistoryDrawer from './SyncHistoryDrawer';
 import { useManualRefresh } from '../hooks/useManualRefresh';
+import { Toast } from '@/components/ui/Toast';
 
 export default function ManualRefreshPanel() {
   const {
@@ -19,6 +21,7 @@ export default function ManualRefreshPanel() {
     historyOpen,
     openHistory,
     closeHistory,
+    sessionExpired,
   } = useManualRefresh();
 
   const [confirmingAll, setConfirmingAll] = useState(false);
@@ -30,7 +33,7 @@ export default function ManualRefreshPanel() {
     return (
       <div className="p-4 text-sm text-gray-500 dark:text-gray-400">
         No networks configured.{' '}
-        <a href="/settings" className="text-blue-600 underline">Go to Settings</a> to add API keys.
+        <Link href="/settings" className="text-blue-600 underline">Go to Settings</Link> to add API keys.
       </div>
     );
   }
@@ -46,6 +49,8 @@ export default function ManualRefreshPanel() {
   };
 
   return (
+    <>
+    {sessionExpired && <Toast message="Session expired. Please sign in again." variant="error" />}
     <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Data Sync</h3>
@@ -112,5 +117,6 @@ export default function ManualRefreshPanel() {
 
       <SyncHistoryDrawer isOpen={historyOpen} onClose={closeHistory} />
     </div>
+    </>
   );
 }
