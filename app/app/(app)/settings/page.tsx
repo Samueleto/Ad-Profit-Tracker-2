@@ -1,8 +1,8 @@
 import PreferencesCard from '@/features/settings/components/PreferencesCard';
-import PreferencesSkeleton from '@/features/settings/components/PreferencesSkeleton';
 import ApiKeyCardSkeleton from '@/features/settings/components/ApiKeyCardSkeleton';
 import { Suspense } from 'react';
 import ApiKeysSectionClient from './ApiKeysSectionClient';
+import SettingsTabsClient from './SettingsTabsClient';
 
 interface Preferences {
   timezone: string;
@@ -23,14 +23,12 @@ const DEFAULT_PREFERENCES: Preferences = {
 
 async function fetchPreferences(): Promise<{ preferences: Preferences; isDefaults: boolean }> {
   try {
-    const [prefsRes] = await Promise.all([
-      fetch(`${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/api/settings/preferences`, {
-        cache: 'no-store',
-      }),
-      // /api/keys/status fetched client-side in ApiKeysSectionClient
-    ]);
-    if (!prefsRes.ok) return { preferences: DEFAULT_PREFERENCES, isDefaults: true };
-    const data = await prefsRes.json();
+    const res = await fetch(
+      `${process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000'}/api/settings/preferences`,
+      { cache: 'no-store' }
+    );
+    if (!res.ok) return { preferences: DEFAULT_PREFERENCES, isDefaults: true };
+    const data = await res.json();
     return {
       preferences: data?.preferences ?? DEFAULT_PREFERENCES,
       isDefaults: !data?.preferences,
@@ -44,14 +42,7 @@ export default async function SettingsPage() {
   const { preferences, isDefaults } = await fetchPreferences();
 
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">Settings</h1>
-        <p className="text-sm text-gray-500 dark:text-gray-400">
-          Manage your API keys, preferences, network configurations, and more.
-        </p>
-      </div>
-
+    <SettingsTabsClient>
       {/* API Key Cards — client component handles fetching and callbacks */}
       <section>
         <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Network API Keys</h2>
@@ -69,6 +60,6 @@ export default async function SettingsPage() {
         <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">General Preferences</h2>
         <PreferencesCard initialPreferences={preferences} isDefaults={isDefaults} />
       </section>
-    </div>
+    </SettingsTabsClient>
   );
 }
