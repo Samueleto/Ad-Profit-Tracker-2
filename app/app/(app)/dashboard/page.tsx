@@ -10,6 +10,7 @@ import ExportModal from '@/features/excel-export/components/ExportModal';
 import { useDashboardStore } from '@/store/dashboardStore';
 import { Download } from 'lucide-react';
 import ExoClickNetworkTab from '@/features/exoclick/components/ExoClickNetworkTab';
+import ZeydooNetworkTab from '@/features/zeydoo/components/ZeydooNetworkTab';
 
 type DashboardTab = 'overview' | 'compare' | 'exoclick' | 'rollerads' | 'zeydoo' | 'propush';
 
@@ -97,11 +98,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {activeTab === 'zeydoo' && (
-        <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-          Zeydoo network details coming soon.
-        </div>
-      )}
+      {activeTab === 'zeydoo' && <ZeydooNetworkTab />}
 
       {activeTab === 'propush' && (
         <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
