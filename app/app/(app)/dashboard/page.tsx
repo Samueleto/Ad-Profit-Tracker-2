@@ -6,6 +6,9 @@ import SyncStatusPanel from '@/features/sync-status/components/SyncStatusPanel';
 import GeoBreakdownSection from '@/features/geo-breakdown/components/GeoBreakdownSection';
 import ComparativeNetworkAnalysisTab from '@/features/comparative-analysis/components/ComparativeNetworkAnalysisTab';
 import DateRangeToolbar from '@/features/date-range/components/DateRangeToolbar';
+import ExportModal from '@/features/excel-export/components/ExportModal';
+import { useDashboardStore } from '@/store/dashboardStore';
+import { Download } from 'lucide-react';
 
 type DashboardTab = 'overview' | 'compare' | 'exoclick' | 'rollerads' | 'zeydoo' | 'propush';
 
@@ -20,16 +23,26 @@ const TABS: { id: DashboardTab; label: string }[] = [
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
+  const { exportModalOpen, setExportModalOpen } = useDashboardStore();
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">
-          Financial Metrics Dashboard
-        </h1>
-        <p className="text-gray-600 dark:text-gray-400">
-          View your ad network profits, trends, and analytics.
-        </p>
+      <div className="flex items-center justify-between gap-4 flex-wrap">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-white mb-1">
+            Financial Metrics Dashboard
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400 text-sm">
+            View your ad network profits, trends, and analytics.
+          </p>
+        </div>
+        <button
+          onClick={() => setExportModalOpen(true)}
+          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+        >
+          <Download className="w-4 h-4" />
+          Export
+        </button>
       </div>
 
       {/* Date range toolbar — sticky */}
@@ -98,6 +111,9 @@ export default function DashboardPage() {
           Propush network details coming soon.
         </div>
       )}
+
+      {/* Export Modal */}
+      {exportModalOpen && <ExportModal onClose={() => setExportModalOpen(false)} />}
     </div>
   );
 }
