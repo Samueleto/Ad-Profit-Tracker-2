@@ -7,6 +7,7 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine,
 } from 'recharts';
 import { format, subDays, startOfMonth, differenceInDays } from 'date-fns';
+import DailyProfitTrendSection from './DailyProfitTrendSection';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface KPIs {
@@ -377,7 +378,10 @@ export default function FinancialMetricsSection({ onSyncNow, onExport }: Financi
             <ROICard roi={data.kpis.roi} roiChange={data.kpis.roiChange} kpis={data.kpis} dateFrom={getRange()?.from ?? ''} dateTo={getRange()?.to ?? ''} loading={false} />
           </div>
 
-          {/* Trend chart */}
+          {/* Daily Profit Trend — dedicated section with metric toggle */}
+          <DailyProfitTrendSection onSyncNow={onSyncNow} />
+
+          {/* Trend chart (period overview) */}
           {data.dailySeries?.length > 0 && (
             <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-5">
               <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-4">Daily Profit Trend</h3>
