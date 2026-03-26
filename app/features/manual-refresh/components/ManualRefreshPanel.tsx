@@ -1,163 +1,30 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState } from 'react';
 import { Loader2, RefreshCw } from 'lucide-react';
-import { getAuth } from 'firebase/auth';
-import { SUPPORTED_NETWORKS, type NetworkId } from '@/lib/constants';
+import { SUPPORTED_NETWORKS } from '@/lib/constants';
 import NetworkSyncRow from './NetworkSyncRow';
 import SyncHistoryDrawer from './SyncHistoryDrawer';
-import { type SyncStatus } from './SyncStatusBadge';
-
-interface NetworkState {
-  networkId: NetworkId;
-  lastSyncedAt: Date | null;
-  lastSyncStatus: SyncStatus;
-  isRefreshing: boolean;
-  rateLimitCountdown: number | null;
-}
-
-const INITIAL_STATE: NetworkState[] = SUPPORTED_NETWORKS.map(n => ({
-  networkId: n,
-  lastSyncedAt: null,
-  lastSyncStatus: 'never',
-  isRefreshing: false,
-  rateLimitCountdown: null,
-}));
-
-async function apiCall(path: string, opts: RequestInit = {}, forceRefresh = false): Promise<Response> {
-  const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken(forceRefresh);
-  return fetch(path, {
-    ...opts,
-    headers: {
-      ...(opts.headers as Record<string, string> ?? {}),
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-}
+import { useManualRefresh } from '../hooks/useManualRefresh';
 
 export default function ManualRefreshPanel() {
-  const router = useRouter();
-  const [networks, setNetworks] = useState<NetworkState[]>(INITIAL_STATE);
-  const [loading, setLoading] = useState(true);
-  const [syncingAll, setSyncingAll] = useState(false);
-  const [allRateLimit, setAllRateLimit] = useState<number | null>(null);
-  const [drawerOpen, setDrawerOpen] = useState(false);
-  const [noNetworks, setNoNetworks] = useState(false);
+  const {
+    networkStates,
+    isInitialLoading,
+    triggeredNetworks,
+    allRateLimit,
+    networkRateLimits,
+    triggerAll,
+    triggerNetwork,
+    historyOpen,
+    openHistory,
+    closeHistory,
+  } = useManualRefresh();
+
   const [confirmingAll, setConfirmingAll] = useState(false);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [syncingAll, setSyncingAll] = useState(false);
 
-  const fetchStatus = useCallback(async (retry = false) => {
-    try {
-      let res = await apiCall('/api/sync/status', {}, retry);
-      if (res.status === 401 && !retry) {
-        res = await apiCall('/api/sync/status', {}, true);
-      }
-      if (res.status === 401) { router.push('/'); return; }
-      if (!res.ok) return;
-      const data = await res.json();
-      const statuses: Array<{ networkId: NetworkId; lastSyncedAt: string | null; lastSyncStatus: SyncStatus }> = data.networks ?? [];
-      if (statuses.length === 0) { setNoNetworks(true); return; }
-      setNoNetworks(false);
-      setNetworks(prev => prev.map(n => {
-        const found = statuses.find(s => s.networkId === n.networkId);
-        if (!found) return n;
-        return {
-          ...n,
-          lastSyncedAt: found.lastSyncedAt ? new Date(found.lastSyncedAt) : null,
-          lastSyncStatus: found.lastSyncStatus,
-          isRefreshing: found.lastSyncStatus === 'in_progress',
-        };
-      }));
-    } finally {
-      setLoading(false);
-    }
-  }, [router]);
-
-  useEffect(() => {
-    fetchStatus();
-  }, [fetchStatus]);
-
-  const startPolling = useCallback(() => {
-    if (pollRef.current) clearInterval(pollRef.current);
-    if (pollTimeoutRef.current) clearTimeout(pollTimeoutRef.current);
-
-    pollRef.current = setInterval(() => {
-      fetchStatus();
-      // Check if all triggered networks are terminal
-      setNetworks(prev => {
-        const allDone = prev.every(n => n.lastSyncStatus === 'success' || n.lastSyncStatus === 'failed' || n.lastSyncStatus === 'never');
-        if (allDone && pollRef.current) {
-          clearInterval(pollRef.current);
-          pollRef.current = null;
-        }
-        return prev;
-      });
-    }, 3000);
-
-    // Stop polling after 60s regardless
-    pollTimeoutRef.current = setTimeout(() => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    }, 60000);
-  }, [fetchStatus]);
-
-  const handleRefreshAll = async () => {
-    setSyncingAll(true);
-    try {
-      let res = await apiCall('/api/sync/manual', { method: 'POST', body: JSON.stringify({}) });
-      if (res.status === 401) {
-        res = await apiCall('/api/sync/manual', { method: 'POST', body: JSON.stringify({}) }, true);
-      }
-      if (res.status === 401) { router.push('/'); return; }
-      if (res.status === 429) {
-        const retryAfter = parseInt(res.headers.get('Retry-After') ?? '60', 10);
-        setAllRateLimit(retryAfter);
-        const timer = setInterval(() => {
-          setAllRateLimit(prev => {
-            if (prev === null || prev <= 1) { clearInterval(timer); return null; }
-            return prev - 1;
-          });
-        }, 1000);
-        return;
-      }
-      setNetworks(prev => prev.map(n => ({ ...n, lastSyncStatus: 'in_progress', isRefreshing: true })));
-      startPolling();
-    } finally {
-      setSyncingAll(false);
-    }
-  };
-
-  const handleNetworkRefresh = async (networkId: NetworkId) => {
-    setNetworks(prev => prev.map(n => n.networkId === networkId ? { ...n, isRefreshing: true, lastSyncStatus: 'in_progress' } : n));
-    try {
-      let res = await apiCall('/api/sync/manual', { method: 'POST', body: JSON.stringify({ networkId }) });
-      if (res.status === 401) {
-        res = await apiCall('/api/sync/manual', { method: 'POST', body: JSON.stringify({ networkId }) }, true);
-      }
-      if (res.status === 401) { router.push('/'); return; }
-      if (res.status === 429) {
-        const retryAfter = parseInt(res.headers.get('Retry-After') ?? '60', 10);
-        setNetworks(prev => prev.map(n => n.networkId === networkId ? { ...n, isRefreshing: false, rateLimitCountdown: retryAfter } : n));
-        const timer = setInterval(() => {
-          setNetworks(prev => {
-            const net = prev.find(n => n.networkId === networkId);
-            if (!net || net.rateLimitCountdown === null || net.rateLimitCountdown <= 1) {
-              clearInterval(timer);
-              return prev.map(n => n.networkId === networkId ? { ...n, rateLimitCountdown: null } : n);
-            }
-            return prev.map(n => n.networkId === networkId ? { ...n, rateLimitCountdown: (n.rateLimitCountdown ?? 1) - 1 } : n);
-          });
-        }, 1000);
-        return;
-      }
-      startPolling();
-    } catch {
-      setNetworks(prev => prev.map(n => n.networkId === networkId ? { ...n, isRefreshing: false, lastSyncStatus: 'failed' } : n));
-    }
-  };
+  const noNetworks = !isInitialLoading && networkStates.every(n => n.lastSyncStatus === 'never');
 
   if (noNetworks) {
     return (
@@ -168,19 +35,26 @@ export default function ManualRefreshPanel() {
     );
   }
 
+  const handleRefreshAll = async () => {
+    setSyncingAll(true);
+    try {
+      await triggerAll();
+    } finally {
+      setSyncingAll(false);
+      setConfirmingAll(false);
+    }
+  };
+
   return (
     <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Data Sync</h3>
-        <button
-          onClick={() => setDrawerOpen(true)}
-          className="text-xs text-blue-600 hover:underline"
-        >
+        <button onClick={openHistory} className="text-xs text-blue-600 hover:underline">
           View Sync History
         </button>
       </div>
 
-      {/* Refresh All button with confirmation tooltip */}
+      {/* Refresh All */}
       <div className="relative mb-4">
         <button
           onClick={() => {
@@ -195,7 +69,7 @@ export default function ManualRefreshPanel() {
           {syncingAll
             ? 'Syncing…'
             : allRateLimit !== null
-            ? `Available in ${allRateLimit}s`
+            ? `Available in ${allRateLimit.countdown}s`
             : confirmingAll
             ? 'Confirm Sync All'
             : 'Refresh All Data Now'}
@@ -203,10 +77,7 @@ export default function ManualRefreshPanel() {
         {confirmingAll && !syncingAll && (
           <div className="absolute left-0 right-0 top-full mt-1 z-10 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-700 rounded-lg px-3 py-2 text-xs text-amber-800 dark:text-amber-300 flex items-center justify-between gap-2">
             <span>This will sync all active networks — continue?</span>
-            <button
-              onClick={() => setConfirmingAll(false)}
-              className="text-amber-600 dark:text-amber-400 hover:underline flex-shrink-0"
-            >
+            <button onClick={() => setConfirmingAll(false)} className="text-amber-600 dark:text-amber-400 hover:underline flex-shrink-0">
               Cancel
             </button>
           </div>
@@ -215,31 +86,31 @@ export default function ManualRefreshPanel() {
 
       {/* Network rows */}
       <div className="divide-y divide-gray-100 dark:divide-gray-800">
-        {loading
+        {isInitialLoading
           ? SUPPORTED_NETWORKS.map(n => (
-            <div key={n} className="flex items-center gap-3 py-2 animate-pulse">
-              <div className="flex-1 space-y-1.5">
-                <div className="h-3.5 w-20 bg-gray-200 dark:bg-gray-700 rounded" />
-                <div className="h-3 w-16 bg-gray-100 dark:bg-gray-800 rounded" />
+              <div key={n} className="flex items-center gap-3 py-2 animate-pulse">
+                <div className="flex-1 space-y-1.5">
+                  <div className="h-3.5 w-20 bg-gray-200 dark:bg-gray-700 rounded" />
+                  <div className="h-3 w-16 bg-gray-100 dark:bg-gray-800 rounded" />
+                </div>
+                <div className="h-5 w-16 bg-gray-200 dark:bg-gray-700 rounded-full" />
+                <div className="h-7 w-7 bg-gray-100 dark:bg-gray-800 rounded-lg" />
               </div>
-              <div className="h-5 w-16 bg-gray-200 dark:bg-gray-700 rounded-full" />
-              <div className="h-7 w-7 bg-gray-100 dark:bg-gray-800 rounded-lg" />
-            </div>
-          ))
-          : networks.map(n => (
-            <NetworkSyncRow
-              key={n.networkId}
-              networkId={n.networkId}
-              lastSyncedAt={n.lastSyncedAt}
-              lastSyncStatus={n.lastSyncStatus}
-              isRefreshing={n.isRefreshing}
-              rateLimitCountdown={n.rateLimitCountdown}
-              onRefresh={() => handleNetworkRefresh(n.networkId)}
-            />
-          ))}
+            ))
+          : networkStates.map(n => (
+              <NetworkSyncRow
+                key={n.networkId}
+                networkId={n.networkId}
+                lastSyncedAt={n.lastSyncedAt}
+                lastSyncStatus={n.lastSyncStatus}
+                isRefreshing={triggeredNetworks.has(n.networkId)}
+                rateLimitCountdown={networkRateLimits[n.networkId]?.countdown ?? null}
+                onRefresh={() => triggerNetwork(n.networkId)}
+              />
+            ))}
       </div>
 
-      <SyncHistoryDrawer isOpen={drawerOpen} onClose={() => setDrawerOpen(false)} />
+      <SyncHistoryDrawer isOpen={historyOpen} onClose={closeHistory} />
     </div>
   );
 }
