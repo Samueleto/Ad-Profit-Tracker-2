@@ -6,6 +6,7 @@ import { X, ChevronDown, Loader2, CheckCircle, AlertTriangle } from 'lucide-reac
 import { getAuth } from 'firebase/auth';
 import { useDateRangeStore } from '@/store/dateRangeStore';
 import { EXPORT_SHEET_KEYS, type ExportSheetKey, type ExportPreviewResponse } from '../types';
+import PdfExportTab from '@/features/pdf-export/components/PdfExportTab';
 
 const SHEET_LABELS: Record<ExportSheetKey, string> = {
   summary: 'Summary',
@@ -203,7 +204,13 @@ export default function ExportModal({ onClose }: ExportModalProps) {
 
         <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
           {activeTab === 'pdf' ? (
-            <p className="text-sm text-gray-500 dark:text-gray-400 italic">PDF export coming soon.</p>
+            <PdfExportTab
+              dateFrom={fromDate}
+              dateTo={toDate}
+              preview={preview}
+              previewLoading={previewLoading}
+              onClose={onClose}
+            />
           ) : (
             <>
               {/* Date range display */}
@@ -346,7 +353,7 @@ export default function ExportModal({ onClose }: ExportModalProps) {
           )}
         </div>
 
-        {/* Footer */}
+        {/* Footer — only for Excel tab; PDF tab has its own action bar */}
         {activeTab === 'excel' && (
           <div className="flex gap-2 px-5 py-4 border-t border-gray-200 dark:border-gray-700">
             <button
