@@ -8,11 +8,12 @@ import type { DateRange as DayPickerRange } from 'react-day-picker';
 import 'react-day-picker/style.css';
 import {
   ChevronDown, ChevronRight, Loader2, AlertTriangle, CheckCircle,
-  BookOpen, X, Edit2, Trash2, RotateCcw,
+  BookOpen, X, Edit2, Trash2, RotateCcw, Clock,
 } from 'lucide-react';
 import MobileDataTableWrapper, { type TableColumn } from '@/features/mobile/components/MobileDataTableWrapper';
 import ExportModal from '@/features/excel-export/components/ExportModal';
 import { useDashboardStore } from '@/store/dashboardStore';
+import ScheduleReportModal from '@/features/report-scheduler/components/ScheduleReportModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -110,6 +111,7 @@ function SavedReportsSidebar({ open, onClose, onLoad }: SavedReportsSidebarProps
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [schedulingReport, setSchedulingReport] = useState<SavedReport | null>(null);
 
   const fetchReports = useCallback(async () => {
     setLoading(true);
@@ -175,6 +177,9 @@ function SavedReportsSidebar({ open, onClose, onLoad }: SavedReportsSidebarProps
                   <button onClick={() => { setRenaming(r.id); setRenameVal(r.name); }} className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
                     <Edit2 className="w-3 h-3" />
                   </button>
+                  <button onClick={() => setSchedulingReport(r)} className="text-xs text-gray-500 hover:text-blue-600 dark:hover:text-blue-400" title="Schedule report">
+                    <Clock className="w-3 h-3" />
+                  </button>
                   <button onClick={() => handleDelete(r.id)} disabled={deleting === r.id} className="text-xs text-red-400 hover:text-red-500">
                     {deleting === r.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
                   </button>
@@ -188,6 +193,13 @@ function SavedReportsSidebar({ open, onClose, onLoad }: SavedReportsSidebarProps
 
   return (
     <>
+      {schedulingReport && (
+        <ScheduleReportModal
+          reportId={schedulingReport.id}
+          reportName={schedulingReport.name}
+          onClose={() => setSchedulingReport(null)}
+        />
+      )}
       {/* Desktop drawer */}
       <div className={`hidden lg:flex flex-col w-64 shrink-0 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 transition-all ${open ? 'translate-x-0' : '-translate-x-full absolute'}`}>
         {open && content}
