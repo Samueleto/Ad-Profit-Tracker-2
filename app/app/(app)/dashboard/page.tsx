@@ -16,8 +16,9 @@ import FinancialMetricsSection from '@/features/dashboard/components/FinancialMe
 import PerNetworkAnalyticsTabsSection from '@/features/network-analytics/components/PerNetworkAnalyticsTabsSection';
 import PerformanceBenchmarkingTab from '@/features/benchmarking/components/PerformanceBenchmarkingTab';
 import FilterToolbar from '@/features/data-filtering/components/FilterToolbar';
+import ApiExplorerTab from '@/features/api-explorer/components/ApiExplorerTab';
 
-type DashboardTab = 'overview' | 'compare' | 'benchmarks' | 'exoclick' | 'rollerads' | 'zeydoo' | 'propush';
+type DashboardTab = 'overview' | 'compare' | 'benchmarks' | 'exoclick' | 'rollerads' | 'zeydoo' | 'propush' | 'api-explorer';
 
 const TABS: { id: DashboardTab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
@@ -27,6 +28,7 @@ const TABS: { id: DashboardTab; label: string }[] = [
   { id: 'rollerads', label: 'RollerAds' },
   { id: 'zeydoo', label: 'Zeydoo' },
   { id: 'propush', label: 'Propush' },
+  { id: 'api-explorer', label: 'API Explorer' },
 ];
 
 export default function DashboardPage() {
@@ -139,6 +141,8 @@ export default function DashboardPage() {
           Propush network details coming soon.
         </div>
       )}
+
+      {activeTab === 'api-explorer' && <ApiExplorerTab />}
 
       {/* Export Modal */}
       {exportModalOpen && <ExportModal onClose={() => setExportModalOpen(false)} />}
