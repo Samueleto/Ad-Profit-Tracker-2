@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { getAuth } from 'firebase/auth';
 import { TrendingUp, TrendingDown, Minus, RefreshCw, Loader2, Download } from 'lucide-react';
 import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
+  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine,
 } from 'recharts';
 import { format, subDays, startOfMonth, differenceInDays } from 'date-fns';
 
@@ -99,6 +99,111 @@ function FreshnessBadge({ cachedAt }: { cachedAt?: string | null }) {
     <span className="px-2 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded-full">
       Cached · {minAgo}m ago
     </span>
+  );
+}
+
+// ─── ROI card ─────────────────────────────────────────────────────────────────
+interface ROICardProps {
+  roi: number | null;
+  roiChange: number | null;
+  kpis: KPIs;
+  dateFrom: string;
+  dateTo: string;
+  loading: boolean;
+}
+
+function ROICard({ roi, roiChange, kpis, dateFrom, dateTo, loading }: ROICardProps) {
+  const [roiBreakdownOpen, setRoiBreakdownOpen] = useState(false);
+  const [networkRows, setNetworkRows] = useState<Array<{ networkId: string; yield: number }>>([]);
+  const [breakdownLoading, setBreakdownLoading] = useState(false);
+
+  useEffect(() => {
+    if (!dateFrom || !dateTo) return;
+    setBreakdownLoading(true);
+    const params = new URLSearchParams({ dimension: 'network', dateFrom, dateTo });
+    authFetch(`/api/roi/breakdown?${params}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (d) setNetworkRows(d.rows ?? d.networks ?? []); })
+      .catch(() => {})
+      .finally(() => setBreakdownLoading(false));
+  }, [dateFrom, dateTo]);
+
+  if (loading) {
+    return (
+      <div className="h-24 bg-gray-200 dark:bg-gray-700 rounded-xl animate-pulse" />
+    );
+  }
+
+  const isNull = roi === null || roi === undefined;
+  const isPositive = !isNull && roi > 0;
+  const isNegative = !isNull && roi < 0;
+
+  const cardBg = isNull ? 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800'
+    : isPositive ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+    : isNegative ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+    : 'bg-amber-50 dark:bg-amber-900/20 border-amber-200 dark:border-amber-800';
+
+  const textColor = isNull ? 'text-amber-600 dark:text-amber-400'
+    : isPositive ? 'text-green-700 dark:text-green-400'
+    : isNegative ? 'text-red-600 dark:text-red-400'
+    : 'text-amber-600 dark:text-amber-400';
+
+  const arrow = isNull ? '→' : isPositive ? '↑' : isNegative ? '↓' : '→';
+
+  const formulaRevenue = kpis.totalRevenue ?? 0;
+  const formulaCost = kpis.totalCost ?? 0;
+  const formulaProfit = formulaRevenue - formulaCost;
+  const formulaROI = formulaCost > 0 ? (formulaProfit / formulaCost * 100).toFixed(2) : 'N/A';
+
+  return (
+    <div className={`border rounded-xl p-4 space-y-3 ${cardBg}`}>
+      <p className="text-xs text-gray-500 dark:text-gray-400">ROI</p>
+      <div className="flex items-center gap-2">
+        <span className={`text-3xl font-black ${textColor}`}>
+          {isNull ? 'N/A' : `${roi.toFixed(2)}%`}
+        </span>
+        <span className={`text-xl ${textColor}`} title={isNull ? 'No cost data available for this period' : undefined}>
+          {arrow}
+        </span>
+      </div>
+      {!isNull && roiChange !== null && (
+        <p className={`text-xs ${textColor}`}>
+          {roiChange > 0 ? '+' : ''}{roiChange.toFixed(1)}% vs prior period
+        </p>
+      )}
+      {isNull && (
+        <span className="inline-block px-2 py-0.5 text-xs bg-amber-100 dark:bg-amber-900/40 text-amber-700 dark:text-amber-300 rounded-full" title="No cost data available for this period">
+          No cost data
+        </span>
+      )}
+
+      {/* Per-network breakdown rows */}
+      {breakdownLoading ? (
+        <div className="animate-pulse h-12 bg-white/50 dark:bg-black/10 rounded" />
+      ) : networkRows.length > 0 ? (
+        <div className="space-y-1">
+          {networkRows.filter(n => ['rollerads', 'zeydoo', 'propush'].includes(n.networkId)).map(n => (
+            <div key={n.networkId} className="flex justify-between text-xs">
+              <span className="capitalize text-gray-600 dark:text-gray-400">{n.networkId}</span>
+              <span className={n.yield >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-500'}>
+                {n.yield.toFixed(2)}%
+              </span>
+            </div>
+          ))}
+        </div>
+      ) : null}
+
+      {/* Collapsible formula */}
+      <button onClick={() => setRoiBreakdownOpen(p => !p)}
+        className={`text-xs underline ${textColor}`}>
+        {roiBreakdownOpen ? 'Hide' : 'ROI Breakdown'} ▾
+      </button>
+      {roiBreakdownOpen && (
+        <div className="bg-white/60 dark:bg-black/20 rounded-lg px-3 py-2 text-xs text-gray-700 dark:text-gray-300 font-mono">
+          ({formulaRevenue.toFixed(2)} − {formulaCost.toFixed(2)}) / {formulaCost.toFixed(2)} × 100 = <strong>{formulaROI}%</strong>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -269,7 +374,7 @@ export default function FinancialMetricsSection({ onSyncNow, onExport }: Financi
             <KPICard label="Total Revenue" value={data.kpis.totalRevenue} change={data.kpis.revenueChange} format="currency" />
             <KPICard label="Total Cost" value={data.kpis.totalCost} change={data.kpis.costChange} format="currency" />
             <KPICard label="Net Profit" value={data.kpis.netProfit} change={data.kpis.profitChange} format="currency" />
-            <KPICard label="ROI" value={data.kpis.roi} change={data.kpis.roiChange} format="percent" />
+            <ROICard roi={data.kpis.roi} roiChange={data.kpis.roiChange} kpis={data.kpis} dateFrom={getRange()?.from ?? ''} dateTo={getRange()?.to ?? ''} loading={false} />
           </div>
 
           {/* Trend chart */}
@@ -287,6 +392,7 @@ export default function FinancialMetricsSection({ onSyncNow, onExport }: Financi
                       formatter={(value, name) => [`$${Number(value).toFixed(2)}`, name as string]}
                       labelFormatter={l => { try { return format(new Date(l), 'MMM d, yyyy'); } catch { return l; } }}
                     />
+                    <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="4 2" strokeWidth={1} label={{ value: 'Breakeven', position: 'insideTopRight', fontSize: 9, fill: '#9ca3af' }} />
                     <Line type="monotone" dataKey="netProfit" stroke="#3b82f6" dot={false} name="Net Profit" strokeWidth={2} />
                     <Line type="monotone" dataKey="revenue" stroke="#10b981" dot={false} name="Revenue" strokeWidth={1} strokeDasharray="4 2" />
                     <Line type="monotone" dataKey="cost" stroke="#ef4444" dot={false} name="Cost" strokeWidth={1} strokeDasharray="4 2" />
