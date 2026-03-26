@@ -1,21 +1,8 @@
 'use client';
 
-import { useState, useRef } from 'react';
-import { useRouter } from 'next/navigation';
-import { getAuth } from 'firebase/auth';
-import { Loader2, AlertTriangle } from 'lucide-react';
-
-type DateRangeOption = 'last_7_days' | 'last_14_days' | 'last_30_days' | 'this_month';
-
-interface Preferences {
-  timezone: string;
-  currency: string;
-  defaultDateRange: DateRangeOption;
-  notifications: {
-    dailySummaryEmail: boolean;
-    weeklyReportEmail: boolean;
-  };
-}
+import { useState } from 'react';
+import { Loader2, AlertTriangle, CheckCircle } from 'lucide-react';
+import { usePreferences, type Preferences } from '../hooks/usePreferences';
 
 interface PreferencesCardProps {
   initialPreferences: Preferences;
@@ -27,42 +14,29 @@ const CURRENCIES = [
   'BRL','SGD','HKD','NOK','SEK','DKK','NZD','ZAR','KRW','AED',
 ];
 
-const DATE_RANGE_OPTIONS: { label: string; value: DateRangeOption }[] = [
+const DATE_RANGE_OPTIONS: { label: string; value: Preferences['defaultDateRange'] }[] = [
   { label: 'Last 7 days', value: 'last_7_days' },
   { label: 'Last 14 days', value: 'last_14_days' },
   { label: 'Last 30 days', value: 'last_30_days' },
   { label: 'This month', value: 'this_month' },
 ];
 
-// Common IANA timezones for filtering
-const ALL_TIMEZONES: string[] = typeof Intl !== 'undefined' && typeof (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf === 'function'
-  ? (Intl as unknown as { supportedValuesOf: (k: string) => string[] }).supportedValuesOf('timeZone')
-  : [
-    'UTC','America/New_York','America/Chicago','America/Denver','America/Los_Angeles',
-    'America/Toronto','America/Vancouver','Europe/London','Europe/Paris','Europe/Berlin',
-    'Europe/Amsterdam','Europe/Rome','Europe/Madrid','Europe/Moscow','Asia/Dubai',
-    'Asia/Kolkata','Asia/Bangkok','Asia/Singapore','Asia/Shanghai','Asia/Tokyo',
-    'Asia/Seoul','Australia/Sydney','Pacific/Auckland',
-  ];
+const ALL_TIMEZONES: string[] =
+  typeof Intl !== 'undefined' &&
+  typeof (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf === 'function'
+    ? (Intl as unknown as { supportedValuesOf: (k: string) => string[] }).supportedValuesOf('timeZone')
+    : [
+        'UTC','America/New_York','America/Chicago','America/Denver','America/Los_Angeles',
+        'America/Toronto','Europe/London','Europe/Paris','Europe/Berlin','Asia/Dubai',
+        'Asia/Kolkata','Asia/Bangkok','Asia/Singapore','Asia/Tokyo','Australia/Sydney',
+      ];
 
-async function getToken(forceRefresh = false): Promise<string | null> {
-  const auth = getAuth();
-  return auth.currentUser?.getIdToken(forceRefresh) ?? null;
-}
-
-async function patchPreferences(partial: Partial<Preferences & { 'notifications.dailySummaryEmail': boolean; 'notifications.weeklyReportEmail': boolean }>, token: string): Promise<Response> {
-  return fetch('/api/settings/preferences', {
-    method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
-    body: JSON.stringify(partial),
-  });
-}
-
-// Toggle switch component
-function Toggle({ checked, onChange, disabled, id }: { checked: boolean; onChange: (v: boolean) => void; disabled?: boolean; id: string }) {
+function Toggle({ checked, onChange, disabled, id }: {
+  checked: boolean;
+  onChange: (v: boolean) => void;
+  disabled?: boolean;
+  id: string;
+}) {
   return (
     <button
       id={id}
@@ -84,94 +58,25 @@ function Toggle({ checked, onChange, disabled, id }: { checked: boolean; onChang
 }
 
 export default function PreferencesCard({ initialPreferences, isDefaults = false }: PreferencesCardProps) {
-  const router = useRouter();
-  const [prefs, setPrefs] = useState<Preferences>(initialPreferences);
+  const { prefs, saveStatus, error, updatePreference, saveAll } = usePreferences(initialPreferences);
+
   const [tzSearch, setTzSearch] = useState(initialPreferences.timezone);
   const [tzOpen, setTzOpen] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
-  const [error, setError] = useState<'forbidden' | '500' | null>(null);
-  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const showToast = (msg: string) => {
-    setToast(msg);
-    setTimeout(() => setToast(null), 3000);
-  };
+  const saving = saveStatus === 'saving';
 
   const filteredTimezones = ALL_TIMEZONES.filter(tz =>
     tz.toLowerCase().includes(tzSearch.toLowerCase())
   ).slice(0, 50);
 
-  const doSave = async (partial: Partial<Preferences>) => {
-    setSaving(true);
-    setError(null);
-    try {
-      let token = await getToken();
-      if (!token) { router.push('/'); return; }
-
-      let res = await patchPreferences(partial as Parameters<typeof patchPreferences>[0], token);
-
-      if (res.status === 401) {
-        token = await getToken(true);
-        if (!token) { router.push('/'); return; }
-        res = await patchPreferences(partial as Parameters<typeof patchPreferences>[0], token);
-      }
-
-      if (res.status === 401) {
-        router.push('/');
-        return;
-      }
-      if (res.status === 403) { setError('forbidden'); return; }
-      if (res.status >= 500) { setError('500'); return; }
-
-      showToast('Preferences saved');
-    } catch {
-      setError('500');
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const scheduleAutoSave = (partial: Partial<Preferences>) => {
-    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
-    autoSaveTimer.current = setTimeout(() => doSave(partial), 600);
-  };
-
   const handleTimezoneSelect = (tz: string) => {
     setTzSearch(tz);
     setTzOpen(false);
-    const updated = { ...prefs, timezone: tz };
-    setPrefs(updated);
-    doSave({ timezone: tz });
-  };
-
-  const handleCurrencyChange = (currency: string) => {
-    const updated = { ...prefs, currency };
-    setPrefs(updated);
-    scheduleAutoSave({ currency });
-  };
-
-  const handleDateRangeChange = (defaultDateRange: DateRangeOption) => {
-    const updated = { ...prefs, defaultDateRange };
-    setPrefs(updated);
-    scheduleAutoSave({ defaultDateRange });
-  };
-
-  const handleNotificationChange = (key: 'dailySummaryEmail' | 'weeklyReportEmail', value: boolean) => {
-    const updated = { ...prefs, notifications: { ...prefs.notifications, [key]: value } };
-    setPrefs(updated);
-    scheduleAutoSave(updated);
+    updatePreference('timezone', tz);
   };
 
   return (
     <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
-      {/* Toast */}
-      {toast && (
-        <div className="fixed top-4 right-4 z-50 bg-green-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg">
-          {toast}
-        </div>
-      )}
-
       {/* Header */}
       <div className="flex items-center justify-between mb-1">
         <h2 className="text-base font-semibold text-gray-900 dark:text-white">General Preferences</h2>
@@ -181,40 +86,32 @@ export default function PreferencesCard({ initialPreferences, isDefaults = false
       </div>
       <hr className="border-gray-200 dark:border-gray-700 mb-5" />
 
-      {/* Error banners */}
-      {error === 'forbidden' && (
-        <div className="mb-4 flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-400">
+      {/* Error banner */}
+      {saveStatus === 'error' && error && (
+        <div className="mb-4 flex items-center gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-700 dark:text-amber-400">
           <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-          Access Denied.{' '}
-          <a href="/dashboard" className="underline">Go to Dashboard</a>
+          {error}
+          <button onClick={saveAll} className="ml-auto text-xs underline">Retry</button>
         </div>
       )}
-      {error === '500' && (
-        <div className="mb-4 flex items-center justify-between p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-700 dark:text-amber-400">
-          <span className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-            Failed to save preferences.
-          </span>
-          <button
-            onClick={() => doSave(prefs)}
-            className="text-xs underline"
-          >
-            Retry
-          </button>
+
+      {/* Success toast */}
+      {saveStatus === 'success' && (
+        <div className="mb-4 flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg text-sm text-green-700 dark:text-green-400">
+          <CheckCircle className="w-4 h-4 flex-shrink-0" />
+          Preferences saved.
         </div>
       )}
 
       <div className="space-y-5">
-        {/* Timezone searchable combobox */}
+        {/* Timezone */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Timezone
-          </label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Timezone</label>
           <div className="relative">
             <input
               type="text"
               value={tzSearch}
-              onChange={e => { setTzSearch(e.target.value); setTzOpen(true); }}
+              onChange={e => { setTzSearch(e.target.value); setTzOpen(true); updatePreference('timezone', e.target.value); }}
               onFocus={() => setTzOpen(true)}
               onBlur={() => setTimeout(() => setTzOpen(false), 150)}
               disabled={saving}
@@ -241,35 +138,27 @@ export default function PreferencesCard({ initialPreferences, isDefaults = false
 
         {/* Currency */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Display Currency
-          </label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Display Currency</label>
           <select
             value={prefs.currency}
-            onChange={e => handleCurrencyChange(e.target.value)}
+            onChange={e => updatePreference('currency', e.target.value)}
             disabled={saving}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50"
           >
-            {CURRENCIES.map(c => (
-              <option key={c} value={c}>{c}</option>
-            ))}
+            {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
         </div>
 
         {/* Default date range */}
         <div>
-          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-            Default Date Range
-          </label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Default Date Range</label>
           <select
             value={prefs.defaultDateRange}
-            onChange={e => handleDateRangeChange(e.target.value as DateRangeOption)}
+            onChange={e => updatePreference('defaultDateRange', e.target.value as Preferences['defaultDateRange'])}
             disabled={saving}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50"
           >
-            {DATE_RANGE_OPTIONS.map(o => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
+            {DATE_RANGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </div>
 
@@ -283,7 +172,7 @@ export default function PreferencesCard({ initialPreferences, isDefaults = false
             <Toggle
               id="toggle-daily"
               checked={prefs.notifications.dailySummaryEmail}
-              onChange={v => handleNotificationChange('dailySummaryEmail', v)}
+              onChange={v => updatePreference('notifications', { ...prefs.notifications, dailySummaryEmail: v })}
               disabled={saving}
             />
           </div>
@@ -294,15 +183,15 @@ export default function PreferencesCard({ initialPreferences, isDefaults = false
             <Toggle
               id="toggle-weekly"
               checked={prefs.notifications.weeklyReportEmail}
-              onChange={v => handleNotificationChange('weeklyReportEmail', v)}
+              onChange={v => updatePreference('notifications', { ...prefs.notifications, weeklyReportEmail: v })}
               disabled={saving}
             />
           </div>
         </div>
 
-        {/* Save button */}
+        {/* Save all button */}
         <button
-          onClick={() => doSave(prefs)}
+          onClick={saveAll}
           disabled={saving}
           className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
         >
