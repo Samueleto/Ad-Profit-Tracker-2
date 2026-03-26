@@ -15,6 +15,8 @@ import {
   ChevronDown,
 } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
+import MobileNavigationDrawer from "./MobileNavigationDrawer";
+import MobileBottomNavBar from "./MobileBottomNavBar";
 
 const navItems = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -36,10 +38,13 @@ export default function AppShell({ children }: AppShellProps) {
 
   return (
     <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900">
-      {/* Mobile sidebar overlay */}
+      {/* Mobile navigation drawer (replaces mobile sidebar on small screens) */}
+      <MobileNavigationDrawer open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+
+      {/* Legacy mobile sidebar overlay (md+ only) */}
       {sidebarOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 lg:hidden"
+          className="fixed inset-0 z-40 bg-black/50 hidden md:block lg:hidden"
           onClick={() => setSidebarOpen(false)}
         />
       )}
@@ -155,8 +160,16 @@ export default function AppShell({ children }: AppShellProps) {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-auto p-4 lg:p-6">{children}</main>
+        <main
+          className="flex-1 overflow-auto p-4 lg:p-6"
+          style={{ paddingBottom: 'calc(56px + env(safe-area-inset-bottom))' }}
+        >
+          {children}
+        </main>
       </div>
+
+      {/* Mobile bottom nav bar */}
+      <MobileBottomNavBar />
     </div>
   );
 }
