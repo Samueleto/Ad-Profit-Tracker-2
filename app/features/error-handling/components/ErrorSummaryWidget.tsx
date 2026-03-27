@@ -29,7 +29,7 @@ async function authFetch(path: string): Promise<Response> {
   return fetch(path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
 }
 
-export default function ErrorSummaryWidget() {
+export default function ErrorSummaryWidget({ onNetworkClick }: { onNetworkClick?: (networkId: string) => void }) {
   const [days, setDays] = useState(7);
   const [data, setData] = useState<SummaryData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -114,7 +114,11 @@ export default function ErrorSummaryWidget() {
               {data.networks.map(n => (
                 <tr key={n.networkId} className={n.networkId === data.mostProblematicNetwork ? 'bg-amber-50 dark:bg-amber-900/10' : ''}>
                   <td className="px-3 py-2 text-xs text-gray-900 dark:text-gray-100 capitalize">
-                    {n.networkId}
+                    {onNetworkClick ? (
+                      <button onClick={() => onNetworkClick(n.networkId)} className="hover:underline text-blue-600 dark:text-blue-400 capitalize">
+                        {n.networkId}
+                      </button>
+                    ) : n.networkId}
                     {n.networkId === data.mostProblematicNetwork && (
                       <span className="ml-2 text-amber-600 dark:text-amber-400">⚠</span>
                     )}

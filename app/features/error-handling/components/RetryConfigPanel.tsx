@@ -29,7 +29,7 @@ async function authFetch(path: string, init: RequestInit = {}): Promise<Response
   });
 }
 
-export default function RetryConfigPanel() {
+export default function RetryConfigPanel({ onSaveSuccess }: { onSaveSuccess?: () => void }) {
   const [configs, setConfigs] = useState<NetworkConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -84,6 +84,7 @@ export default function RetryConfigPanel() {
       if (!res.ok) { setSaveError('Failed to save config.'); return; }
       setEditing(null);
       fetchConfigs();
+      onSaveSuccess?.();
     } finally { setSaving(false); }
   };
 

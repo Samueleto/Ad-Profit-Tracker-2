@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { getAuth } from 'firebase/auth';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
@@ -28,10 +28,13 @@ function formatCountdown(seconds: number): string {
   return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
 }
 
-export default function RetryStatePanel() {
+export default function RetryStatePanel({ refreshTrigger = 0 }: { refreshTrigger?: number }) {
   const [states, setStates] = useState<NetworkRetryState[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  // Local countdown ticks — keyed by networkId, decremented each second
+  const [countdowns, setCountdowns] = useState<Record<string, number>>({});
+  const prevTriggerRef = useRef(refreshTrigger);
 
   const fetchState = useCallback(async () => {
     setLoading(true);
@@ -40,12 +43,43 @@ export default function RetryStatePanel() {
       const res = await authFetch('/api/errors/retry-state');
       if (!res.ok) { setError(true); return; }
       const data = await res.json();
-      setStates(data.networks ?? data.states ?? []);
+      const nets: NetworkRetryState[] = data.networks ?? data.states ?? [];
+      setStates(nets);
+      // Seed local countdowns from fresh API data
+      const initial: Record<string, number> = {};
+      nets.forEach(s => {
+        if (s.timeUntilNextRetrySeconds != null) initial[s.networkId] = s.timeUntilNextRetrySeconds;
+      });
+      setCountdowns(initial);
     } catch { setError(true); }
     finally { setLoading(false); }
   }, []);
 
+  // Initial load
   useEffect(() => { fetchState(); }, [fetchState]);
+
+  // Refresh when parent increments refreshTrigger
+  useEffect(() => {
+    if (refreshTrigger !== prevTriggerRef.current) {
+      prevTriggerRef.current = refreshTrigger;
+      fetchState();
+    }
+  }, [refreshTrigger, fetchState]);
+
+  // Tick countdowns down every second without re-fetching
+  useEffect(() => {
+    const id = setInterval(() => {
+      setCountdowns(prev => {
+        const next = { ...prev };
+        let changed = false;
+        Object.keys(next).forEach(id => {
+          if (next[id] > 0) { next[id] = next[id] - 1; changed = true; }
+        });
+        return changed ? next : prev;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   if (loading) {
     return (
@@ -86,8 +120,8 @@ export default function RetryStatePanel() {
             ) : (
               <div className="space-y-1 text-xs text-gray-600 dark:text-gray-400">
                 <p>Retry count: <strong className="text-gray-900 dark:text-white">{s.retryCount}</strong></p>
-                {s.timeUntilNextRetrySeconds != null && (
-                  <p>Next retry: <strong className="text-gray-900 dark:text-white">{formatCountdown(s.timeUntilNextRetrySeconds)}</strong></p>
+                {(countdowns[s.networkId] != null || s.timeUntilNextRetrySeconds != null) && (
+                  <p>Next retry: <strong className="text-gray-900 dark:text-white">{formatCountdown(countdowns[s.networkId] ?? s.timeUntilNextRetrySeconds ?? 0)}</strong></p>
                 )}
                 {s.lastErrorCode && <p>Last error: <code className="font-mono text-red-500 dark:text-red-400">{s.lastErrorCode}</code></p>}
                 {s.lastSyncStatus && (

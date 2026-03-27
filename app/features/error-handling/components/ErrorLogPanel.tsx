@@ -24,8 +24,8 @@ async function authFetch(path: string): Promise<Response> {
   });
 }
 
-export default function ErrorLogPanel() {
-  const [network, setNetwork] = useState('');
+export default function ErrorLogPanel({ initialNetwork = '' }: { initialNetwork?: string }) {
+  const [network, setNetwork] = useState(initialNetwork);
   const [errorCode, setErrorCode] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');

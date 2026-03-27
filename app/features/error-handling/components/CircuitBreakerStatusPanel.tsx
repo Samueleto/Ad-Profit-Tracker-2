@@ -34,7 +34,7 @@ async function authFetch(path: string, init: RequestInit = {}): Promise<Response
   });
 }
 
-export default function CircuitBreakerStatusPanel() {
+export default function CircuitBreakerStatusPanel({ onResetSuccess }: { onResetSuccess?: () => void }) {
   const [data, setData] = useState<StatusData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -76,6 +76,7 @@ export default function CircuitBreakerStatusPanel() {
         return;
       }
       await fetchStatus();
+      onResetSuccess?.();
     } finally { setResetting(null); }
   };
 

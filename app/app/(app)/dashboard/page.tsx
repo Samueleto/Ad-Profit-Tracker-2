@@ -24,8 +24,10 @@ import FilterToolbar from '@/features/data-filtering/components/FilterToolbar';
 import ApiExplorerTab from '@/features/api-explorer/components/ApiExplorerTab';
 import ScheduledSyncDashboard from '@/features/sync/components/ScheduledSyncDashboard';
 import HistoricalDataSection from '@/features/historical-data/components/HistoricalDataSection';
+import ErrorMonitoringTab from '@/features/error-handling/components/ErrorMonitoringTab';
+import ErrorSummaryWidget from '@/features/error-handling/components/ErrorSummaryWidget';
 
-type DashboardTab = 'overview' | 'compare' | 'benchmarks' | 'exoclick' | 'rollerads' | 'zeydoo' | 'propush' | 'api-explorer';
+type DashboardTab = 'overview' | 'compare' | 'benchmarks' | 'exoclick' | 'rollerads' | 'zeydoo' | 'propush' | 'api-explorer' | 'error-monitoring';
 
 const TABS: { id: DashboardTab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
@@ -36,6 +38,7 @@ const TABS: { id: DashboardTab; label: string }[] = [
   { id: 'zeydoo', label: 'Zeydoo' },
   { id: 'propush', label: 'Propush' },
   { id: 'api-explorer', label: 'API Explorer' },
+  { id: 'error-monitoring', label: 'Errors' },
 ];
 
 export default function DashboardPage() {
@@ -105,6 +108,12 @@ export default function DashboardPage() {
             </button>
           ))}
         </nav>
+      </div>
+
+      {/* Error Summary Widget — compact, always visible in header for quick health check */}
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-3">
+        <p className="text-xs font-semibold text-gray-500 dark:text-gray-400 mb-2">Sync Health</p>
+        <ErrorSummaryWidget />
       </div>
 
       {/* Tab panels */}
@@ -192,6 +201,8 @@ export default function DashboardPage() {
       )}
 
       {activeTab === 'api-explorer' && <ApiExplorerTab />}
+
+      {activeTab === 'error-monitoring' && <ErrorMonitoringTab />}
 
       {/* Export Modal */}
       {exportModalOpen && <ExportModal onClose={() => setExportModalOpen(false)} />}
