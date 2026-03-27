@@ -102,8 +102,8 @@ export function useZeydooTopCountries(dateFrom: string, dateTo: string, limit?: 
 }
 
 /** @deprecated Use useZeydooTopCountries */
-export function useZeydooStatsByCountry(dateFrom: string, dateTo: string, limit?: number) {
-  return useZeydooTopCountries(dateFrom, dateTo, limit);
+export function useZeydooStatsByCountry(dateFrom: string, dateTo: string, limit?: number, syncVersion = 0) {
+  return useZeydooTopCountries(dateFrom, dateTo, limit, syncVersion);
 }
 
 // ─── useZeydooSync ────────────────────────────────────────────────────────────

@@ -5,20 +5,15 @@ import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'rec
 import { AlertCircle } from 'lucide-react';
 import { useZeydooStats } from '../hooks/useZeydooStats';
 
-function defaultRange() {
-  const to = new Date();
-  const from = new Date();
-  from.setDate(from.getDate() - 6);
-  return { from: from.toISOString().split('T')[0], to: to.toISOString().split('T')[0] };
-}
 
 interface ZeydooStatsOverviewProps {
   dateFrom: string;
   dateTo: string;
   onDateChange: (from: string, to: string) => void;
+  syncVersion?: number;
 }
 
-export default function ZeydooStatsOverview({ dateFrom, dateTo, onDateChange }: ZeydooStatsOverviewProps) {
+export default function ZeydooStatsOverview({ dateFrom, dateTo, onDateChange, syncVersion = 0 }: ZeydooStatsOverviewProps) {
   const [groupBy, setGroupBy] = useState<'day' | 'total'>('day');
   const [rangeError, setRangeError] = useState<string | null>(null);
 
@@ -26,6 +21,7 @@ export default function ZeydooStatsOverview({ dateFrom, dateTo, onDateChange }: 
     rangeError ? '' : dateFrom,
     rangeError ? '' : dateTo,
     groupBy,
+    syncVersion,
   );
 
   const handleFrom = (v: string) => {

@@ -14,7 +14,7 @@ import { Download, ChevronDown } from 'lucide-react';
 import { Toast } from '@/components/ui/Toast';
 import ExoClickNetworkTab from '@/features/exoclick/components/ExoClickNetworkTab';
 import RollerAdsNetworkTab from '@/features/rollerads/components/RollerAdsNetworkTab';
-import ZeydooNetworkTab from '@/features/zeydoo/components/ZeydooNetworkTab';
+import ZeydooDashboard from '@/features/zeydoo/components/ZeydooDashboard';
 import FinancialMetricsSection from '@/features/dashboard/components/FinancialMetricsSection';
 import ConnectedROISection from '@/features/roi/components/ConnectedROISection';
 import DailyProfitTrendSection from '@/features/dashboard/components/DailyProfitTrendSection';
@@ -173,7 +173,7 @@ export default function DashboardPage() {
 
       {activeTab === 'rollerads' && <RollerAdsNetworkTab />}
 
-      {activeTab === 'zeydoo' && <ZeydooNetworkTab />}
+      {activeTab === 'zeydoo' && <ZeydooDashboard />}
 
       {activeTab === 'propush' && (
         <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">

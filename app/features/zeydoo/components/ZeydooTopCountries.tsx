@@ -7,11 +7,12 @@ import { useZeydooStatsByCountry } from '../hooks/useZeydooStats';
 interface ZeydooTopCountriesProps {
   dateFrom: string;
   dateTo: string;
+  syncVersion?: number;
 }
 
-export default function ZeydooTopCountries({ dateFrom, dateTo }: ZeydooTopCountriesProps) {
+export default function ZeydooTopCountries({ dateFrom, dateTo, syncVersion = 0 }: ZeydooTopCountriesProps) {
   const [limit, setLimit] = useState(20);
-  const { countries, isLoading, error } = useZeydooStatsByCountry(dateFrom, dateTo, limit);
+  const { countries, isLoading, error } = useZeydooStatsByCountry(dateFrom, dateTo, limit, syncVersion);
   const rows = countries ?? [];
 
   return (
