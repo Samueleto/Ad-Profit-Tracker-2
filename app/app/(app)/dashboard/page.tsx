@@ -23,6 +23,7 @@ import PerformanceBenchmarkingTab from '@/features/benchmarking/components/Perfo
 import FilterToolbar from '@/features/data-filtering/components/FilterToolbar';
 import ApiExplorerTab from '@/features/api-explorer/components/ApiExplorerTab';
 import ScheduledSyncDashboard from '@/features/sync/components/ScheduledSyncDashboard';
+import HistoricalDataSection from '@/features/historical-data/components/HistoricalDataSection';
 
 type DashboardTab = 'overview' | 'compare' | 'benchmarks' | 'exoclick' | 'rollerads' | 'zeydoo' | 'propush' | 'api-explorer';
 
@@ -140,6 +141,9 @@ export default function DashboardPage() {
           <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
             <ScheduledSyncDashboard />
           </div>
+
+          {/* Historical Data Explorer — dates, snapshot, trend, coverage, backfill */}
+          <HistoricalDataSection />
 
           {/* Collapsible ManualRefreshPanel */}
           <div id="sync" ref={syncRef} className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
