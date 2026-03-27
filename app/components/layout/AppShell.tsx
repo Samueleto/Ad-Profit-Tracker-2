@@ -28,6 +28,16 @@ const navItems = [
   { href: "/help", label: "Help", icon: HelpCircle },
 ];
 
+function pathToTitle(path: string): string {
+  if (path === "/dashboard") return "Dashboard";
+  if (path.startsWith("/settings")) return "Settings";
+  if (path.startsWith("/reports")) return "Reports";
+  if (path.startsWith("/team")) return "Team";
+  if (path.startsWith("/help")) return "Help";
+  if (path.startsWith("/onboarding")) return "Setup";
+  return "Ad Profit Tracker";
+}
+
 interface AppShellProps {
   children: React.ReactNode;
 }
@@ -106,6 +116,11 @@ export default function AppShell({ children }: AppShellProps) {
           >
             <Menu className="w-6 h-6" />
           </button>
+
+          {/* Mobile page title — updates on navigation */}
+          <span className="lg:hidden ml-3 text-sm font-semibold text-gray-900 dark:text-white">
+            {pathToTitle(pathname ?? "")}
+          </span>
 
           <div className="flex-1 lg:flex-none" />
 

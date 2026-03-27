@@ -145,16 +145,20 @@ export default function ComparativeNetworkAnalysisTab({ onNetworkSelect }: Compa
             ))}
           </div>
 
-          {/* Bar chart */}
+          {/* Bar chart — horizontally scrollable on mobile */}
           <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
             <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-3">
               {METRIC_OPTIONS.find(m => m.value === metric)?.label} by Network
             </h3>
-            <ComparisonBarChart
-              networks={data.networks}
-              metric={metric}
-              networkLabels={NETWORK_LABELS}
-            />
+            <div className="overflow-x-auto">
+              <div className="min-w-[400px]">
+                <ComparisonBarChart
+                  networks={data.networks}
+                  metric={metric}
+                  networkLabels={NETWORK_LABELS}
+                />
+              </div>
+            </div>
           </div>
 
           {/* Network ranking strip */}

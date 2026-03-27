@@ -13,6 +13,8 @@ import NetworkSubRow from './NetworkSubRow';
 import GeoCountryDrilldownModal from './GeoCountryDrilldownModal';
 import { useGeoBreakdown } from '../hooks/useGeoBreakdown';
 import { Toast } from '@/components/ui/Toast';
+import MobileDataTableWrapper from '@/components/layout/MobileDataTableWrapper';
+import type { ColumnConfig } from '@/components/layout/MobileDataTableWrapper';
 
 function formatCurrency(value: number | null): string {
   if (value === null) return '—';
@@ -80,6 +82,23 @@ export default function GeoBreakdownSection() {
       return next;
     });
   };
+
+  const geoTableColumns: ColumnConfig[] = [
+    { key: 'countryName', label: 'Country', visibility: 'primary',
+      render: row => `${row.flagEmoji ?? ''} ${row.countryName ?? row.countryCode}` },
+    { key: 'netProfit', label: 'Net Profit', visibility: 'primary',
+      render: row => formatCurrency(row.netProfit as number | null) },
+    { key: 'revenue', label: 'Revenue', visibility: 'secondary',
+      render: row => formatCurrency(row.revenue as number | null) },
+    { key: 'cost', label: 'Cost', visibility: 'secondary',
+      render: row => formatCurrency(row.cost as number | null) },
+    { key: 'roi', label: 'ROI%', visibility: 'secondary',
+      render: row => formatRoi(row.roi as number | null) },
+    { key: 'impressions', label: 'Impressions', visibility: 'secondary',
+      render: row => formatNumber(row.impressions as number | null) },
+    { key: 'clicks', label: 'Clicks', visibility: 'secondary',
+      render: row => formatNumber(row.clicks as number | null) },
+  ];
 
   return (
     <>
@@ -149,7 +168,17 @@ export default function GeoBreakdownSection() {
         </div>
       ) : (
         <>
-          <div className="overflow-x-auto">
+          {/* Mobile card view */}
+          <div className="md:hidden p-3 space-y-2">
+            <MobileDataTableWrapper
+              columns={geoTableColumns}
+              rows={sortedAndFiltered as unknown as Record<string, unknown>[]}
+              rowKey="countryCode"
+            />
+          </div>
+
+          {/* Desktop table */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-200 dark:border-gray-700">
