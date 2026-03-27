@@ -136,12 +136,13 @@ export default function DashboardPage() {
             }}
           />
 
+          {/* Geo breakdown */}
+          <GeoBreakdownSection />
+
+          {/* Per-network analytics tabs — below geo breakdown */}
           <div id="daily-trend">
             <PerNetworkAnalyticsTabsSection dateFrom={fromDate} dateTo={toDate} />
           </div>
-
-          {/* Geo breakdown — below daily trend */}
-          <GeoBreakdownSection />
 
           {/* Sync Status Panel — live polling, circuit breaker, anomalies */}
           <SyncStatusPanel />

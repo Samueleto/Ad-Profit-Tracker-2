@@ -1,12 +1,15 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
+import Link from 'next/link';
 import { getAuth } from 'firebase/auth';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import { format } from 'date-fns';
 import { ChevronDown, Loader2, RefreshCw, AlertCircle, Copy, Check } from 'lucide-react';
+import { Toast } from '@/components/ui/Toast';
+import GeoCountryDrilldownModal from '@/features/geo-breakdown/components/GeoCountryDrilldownModal';
 
 const NETWORKS = ['exoclick', 'rollerads', 'zeydoo', 'propush'] as const;
 type Network = typeof NETWORKS[number];
@@ -210,7 +213,7 @@ function NetworkAccordion({ networkId }: { networkId: Network }) {
             {noApiKey ? (
               <div className="text-xs text-amber-600 dark:text-amber-400">
                 API key not configured —{' '}
-                <a href="/settings" className="underline">go to Settings</a>
+                <Link href="/settings" className="underline">go to Settings</Link>
               </div>
             ) : rawLoading ? (
               <div className="animate-pulse h-24 bg-gray-100 dark:bg-gray-800 rounded" />
@@ -258,16 +261,19 @@ function NetworkTabPanel({
   networkId,
   dateFrom,
   dateTo,
+  onCountryClick,
 }: {
   networkId: Network;
   dateFrom: string;
   dateTo: string;
+  onCountryClick?: (countryCode: string, countryName: string, flagEmoji: string) => void;
 }) {
   const [stats, setStats] = useState<NetworkStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [syncToast, setSyncToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null);
 
   const fetchStats = useCallback(async () => {
     if (!dateFrom || !dateTo) return;
@@ -287,12 +293,21 @@ function NetworkTabPanel({
 
   const handleSync = async () => {
     setSyncing(true);
+    setSyncToast(null);
     try {
-      await authFetch('/api/sync/manual', {
+      const res = await authFetch('/api/sync/manual', {
         method: 'POST',
         body: JSON.stringify({ networkId }),
       });
-      fetchStats();
+      if (res.ok) {
+        setSyncToast({ message: `${NETWORK_LABELS[networkId]} synced successfully.`, variant: 'success' });
+        fetchStats();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setSyncToast({ message: data.error ?? 'Sync failed — please try again.', variant: 'error' });
+      }
+    } catch {
+      setSyncToast({ message: 'Sync failed — please try again.', variant: 'error' });
     } finally { setSyncing(false); }
   };
 
@@ -311,6 +326,9 @@ function NetworkTabPanel({
 
   return (
     <div className="space-y-5">
+      {syncToast && (
+        <Toast message={syncToast.message} variant={syncToast.variant} onClose={() => setSyncToast(null)} />
+      )}
       {/* Sync button */}
       <div className="flex justify-end">
         <button onClick={handleSync} disabled={syncing || loading}
@@ -385,7 +403,11 @@ function NetworkTabPanel({
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
               {stats.countries.map(row => (
-                <tr key={row.countryCode} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
+                <tr
+                  key={row.countryCode}
+                  className={`hover:bg-gray-50 dark:hover:bg-gray-800/50 ${onCountryClick ? 'cursor-pointer' : ''}`}
+                  onClick={onCountryClick ? () => onCountryClick(row.countryCode, row.countryName || row.countryCode, row.flagEmoji || '') : undefined}
+                >
                   <td className="px-3 py-2 text-gray-900 dark:text-gray-100">
                     {row.flagEmoji && <span className="mr-1">{row.flagEmoji}</span>}
                     {row.countryName || row.countryCode}
@@ -456,6 +478,7 @@ type TabId = Network | 'explorer';
 export default function PerNetworkAnalyticsTabsSection({ dateFrom, dateTo }: PerNetworkAnalyticsTabsSectionProps) {
   const [activeTab, setActiveTab] = useState<TabId>('exoclick');
   const [statuses, setStatuses] = useState<Record<string, string>>({});
+  const [drilldown, setDrilldown] = useState<{ code: string; name: string; flag: string } | null>(null);
 
   useEffect(() => {
     authFetch('/api/networks/stats?summary=true')
@@ -511,7 +534,23 @@ export default function PerNetworkAnalyticsTabsSection({ dateFrom, dateTo }: Per
       {activeTab === 'explorer' ? (
         <ApiExplorerTab />
       ) : (
-        <NetworkTabPanel key={`${activeTab}-${dateFrom}-${dateTo}`} networkId={activeTab as Network} dateFrom={dateFrom} dateTo={dateTo} />
+        <NetworkTabPanel
+          key={`${activeTab}-${dateFrom}-${dateTo}`}
+          networkId={activeTab as Network}
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onCountryClick={(code, name, flag) => setDrilldown({ code, name, flag })}
+        />
+      )}
+
+      {/* Geo country drilldown modal */}
+      {drilldown && (
+        <GeoCountryDrilldownModal
+          countryCode={drilldown.code}
+          countryName={drilldown.name}
+          flagEmoji={drilldown.flag}
+          onClose={() => setDrilldown(null)}
+        />
       )}
     </div>
   );
