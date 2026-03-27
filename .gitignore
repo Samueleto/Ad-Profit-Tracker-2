@@ -5,3 +5,4 @@ app/build/
 *.pem
 .DS_Store
 npm-debug.log*
+app/tsconfig.tsbuildinfo
