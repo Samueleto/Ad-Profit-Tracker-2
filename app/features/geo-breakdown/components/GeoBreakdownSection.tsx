@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search } from 'lucide-react';
 import { useDateRangeStore } from '@/store/dateRangeStore';
+import { useDashboardStore } from '@/store/dashboardStore';
 import type { GeoCountryRow, MetricToggle, TopNOption } from '../types';
 import GeoColorRow from './GeoColorRow';
 import MetricShareBar from './MetricShareBar';
@@ -38,6 +39,7 @@ export default function GeoBreakdownSection() {
   const router = useRouter();
   const { fromDate, toDate } = useDateRangeStore();
   const { countries, loading, sessionExpired } = useGeoBreakdown(fromDate, toDate);
+  const { filters } = useDashboardStore();
 
   useEffect(() => {
     if (sessionExpired) {
@@ -50,10 +52,14 @@ export default function GeoBreakdownSection() {
   const [expandedNetworks, setExpandedNetworks] = useState<Set<string>>(new Set());
   const [drilldownCountry, setDrilldownCountry] = useState<GeoCountryRow | null>(null);
 
+  // Use store searchQuery (from FilterToolbar) if present, otherwise fall back to local search
+  const activeSearch = filters.searchQuery || search;
+
   const sortedAndFiltered = useMemo(() => {
     const filtered = countries.filter(c =>
-      !search || c.countryName.toLowerCase().includes(search.toLowerCase()) ||
-      c.countryCode.toLowerCase().includes(search.toLowerCase())
+      !activeSearch ||
+      c.countryName.toLowerCase().includes(activeSearch.toLowerCase()) ||
+      c.countryCode.toLowerCase().includes(activeSearch.toLowerCase())
     );
     const sorted = [...filtered].sort((a, b) => {
       if (metric === 'Revenue') return (b.revenue ?? -Infinity) - (a.revenue ?? -Infinity);
@@ -61,7 +67,7 @@ export default function GeoBreakdownSection() {
       return (b.netProfit ?? -Infinity) - (a.netProfit ?? -Infinity);
     });
     return sorted.slice(0, topN);
-  }, [countries, metric, topN, search]);
+  }, [countries, metric, topN, activeSearch]);
 
   const insights = useMemo(() => {
     const withProfit = countries.filter(c => c.netProfit !== null);

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { getAuth } from 'firebase/auth';
-import { Filter, X, Loader2, AlertTriangle, ChevronDown, Search } from 'lucide-react';
+import { Filter, X, Loader2, AlertTriangle, ChevronDown, Search, Bookmark, Trash2, Plus } from 'lucide-react';
 import { useDashboardStore, type MetricFocus, type DataQuality } from '@/store/dashboardStore';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -73,6 +73,12 @@ function CountryCombobox({
     } catch {
       setStatus('error');
     }
+  }, [dateFrom, dateTo]);
+
+  // Invalidate cached country list when date range changes
+  useEffect(() => {
+    setCountries([]);
+    setStatus('idle');
   }, [dateFrom, dateTo]);
 
   useEffect(() => {
@@ -147,6 +153,178 @@ function CountryCombobox({
                 />
                 <span className="text-xs text-gray-700 dark:text-gray-300">{c.name} ({c.code})</span>
               </label>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Saved Filters / Preset Dropdown ─────────────────────────────────────────
+
+interface SavedFilter {
+  id: string;
+  name: string;
+  filters: {
+    selectedNetworks?: string[];
+    selectedCountries?: string[];
+    selectedMetric?: MetricFocus;
+    dataQuality?: DataQuality;
+  };
+}
+
+function SavedFiltersDropdown({
+  currentFilters,
+  onApply,
+}: {
+  currentFilters: { selectedNetworks: string[]; selectedCountries: string[]; selectedMetric: MetricFocus; dataQuality: DataQuality };
+  onApply: (f: SavedFilter['filters']) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [presets, setPresets] = useState<SavedFilter[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [saveMode, setSaveMode] = useState(false);
+  const [newName, setNewName] = useState('');
+  const [saving, setSaving] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  const loadPresets = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await authFetch('/api/filters/saved');
+      if (res.ok) {
+        const data = await res.json();
+        setPresets(data.filters ?? []);
+      }
+    } catch { /* ignore */ } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { loadPresets(); }, [loadPresets]);
+
+  useEffect(() => {
+    function handleClick(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        setSaveMode(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClick);
+    return () => document.removeEventListener('mousedown', handleClick);
+  }, []);
+
+  async function handleSave() {
+    if (!newName.trim()) return;
+    setSaving(true);
+    try {
+      const auth = getAuth();
+      const token = await auth.currentUser?.getIdToken();
+      const saveRes = await fetch('/api/filters/saved', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ name: newName.trim(), filters: currentFilters }),
+      });
+      if (saveRes.ok) {
+        setNewName('');
+        setSaveMode(false);
+        await loadPresets();
+      }
+    } catch { /* ignore */ } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    const auth = getAuth();
+    const token = await auth.currentUser?.getIdToken();
+    try {
+      await fetch(`/api/filters/saved/${id}`, {
+        method: 'DELETE',
+        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      });
+      setPresets(prev => prev.filter(p => p.id !== id));
+    } catch { /* ignore */ }
+  }
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+      >
+        <Bookmark className="w-3 h-3" />
+        Saved
+        {presets.length > 0 && (
+          <span className="bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-full px-1.5 text-[10px] font-medium">
+            {presets.length}
+          </span>
+        )}
+        <ChevronDown className="w-3 h-3" />
+      </button>
+
+      {open && (
+        <div className="absolute top-full mt-1 right-0 z-40 w-64 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl shadow-lg">
+          <div className="p-2 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between">
+            <span className="text-xs font-medium text-gray-700 dark:text-gray-300">Saved Filters</span>
+            <button
+              onClick={() => { setSaveMode(s => !s); setNewName(''); }}
+              className="flex items-center gap-1 text-xs text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              <Plus className="w-3 h-3" />
+              Save current
+            </button>
+          </div>
+
+          {saveMode && (
+            <div className="p-2 border-b border-gray-100 dark:border-gray-800 flex items-center gap-1.5">
+              <input
+                type="text"
+                value={newName}
+                onChange={e => setNewName(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleSave(); }}
+                placeholder="Filter name..."
+                autoFocus
+                className="flex-1 text-xs px-2 py-1 rounded-md border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 text-gray-800 dark:text-gray-200 placeholder-gray-400"
+              />
+              <button
+                onClick={handleSave}
+                disabled={saving || !newName.trim()}
+                className="px-2 py-1 text-xs font-medium bg-blue-600 text-white rounded-md disabled:opacity-50 hover:bg-blue-700 transition-colors"
+              >
+                {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : 'Save'}
+              </button>
+            </div>
+          )}
+
+          <div className="max-h-48 overflow-y-auto py-1">
+            {loading && (
+              <div className="flex items-center gap-2 px-3 py-2 text-xs text-gray-400">
+                <Loader2 className="w-3 h-3 animate-spin" /> Loading...
+              </div>
+            )}
+            {!loading && presets.length === 0 && (
+              <div className="px-3 py-2 text-xs text-gray-400">No saved filters yet</div>
+            )}
+            {presets.map(preset => (
+              <div key={preset.id} className="flex items-center justify-between px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-800 group">
+                <button
+                  onClick={() => { onApply(preset.filters); setOpen(false); }}
+                  className="flex-1 text-left text-xs text-gray-700 dark:text-gray-300 truncate"
+                >
+                  {preset.name}
+                </button>
+                <button
+                  onClick={() => handleDelete(preset.id)}
+                  className="opacity-0 group-hover:opacity-100 p-1 text-gray-400 hover:text-red-500 transition-all"
+                >
+                  <Trash2 className="w-3 h-3" />
+                </button>
+              </div>
             ))}
           </div>
         </div>
@@ -306,6 +484,24 @@ export default function FilterToolbar({ dateFrom, dateTo }: { dateFrom: string; 
     resetFilters,
   } = useDashboardStore();
 
+  function handleApplyPreset(presetFilters: {
+    selectedNetworks?: string[];
+    selectedCountries?: string[];
+    selectedMetric?: MetricFocus;
+    dataQuality?: DataQuality;
+  }) {
+    if (presetFilters.selectedNetworks !== undefined) {
+      setSelectedNetworks(presetFilters.selectedNetworks);
+      setStagedNetworks(presetFilters.selectedNetworks);
+    }
+    if (presetFilters.selectedCountries !== undefined) {
+      setSelectedCountries(presetFilters.selectedCountries);
+      setStagedCountries(presetFilters.selectedCountries);
+    }
+    if (presetFilters.selectedMetric !== undefined) setSelectedMetric(presetFilters.selectedMetric);
+    if (presetFilters.dataQuality !== undefined) setDataQuality(presetFilters.dataQuality);
+  }
+
   // Staged state for networks + countries
   const [stagedNetworks, setStagedNetworks] = useState<string[]>(filters.selectedNetworks);
   const [stagedCountries, setStagedCountries] = useState<string[]>(filters.selectedCountries);
@@ -385,6 +581,17 @@ export default function FilterToolbar({ dateFrom, dateTo }: { dateFrom: string; 
           )}
         </div>
         <FilterPanel {...panelProps} />
+        <div className="ml-auto shrink-0">
+          <SavedFiltersDropdown
+            currentFilters={{
+              selectedNetworks: filters.selectedNetworks,
+              selectedCountries: filters.selectedCountries,
+              selectedMetric: filters.selectedMetric,
+              dataQuality: filters.dataQuality,
+            }}
+            onApply={handleApplyPreset}
+          />
+        </div>
       </div>
 
       {/* Mobile: collapsed button */}
