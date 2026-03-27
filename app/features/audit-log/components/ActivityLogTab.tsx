@@ -7,6 +7,7 @@ import type { AuditLog, LogFilters, PaginatedLogsResponse } from '../types';
 import AuditFilterBar from './AuditFilterBar';
 import LogTableRow from './LogTableRow';
 import ClearLogsDialog from './ClearLogsDialog';
+import { Toast } from '@/components/ui/Toast';
 
 const PAGE_SIZE = 25;
 
@@ -45,7 +46,7 @@ export default function ActivityLogTab() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [filters, setFilters] = useState<LogFilters>({});
   const [clearOpen, setClearOpen] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null);
   const [exporting, setExporting] = useState(false);
 
   const fetchLogs = useCallback(async (activeFilters: LogFilters) => {
@@ -112,12 +113,16 @@ export default function ActivityLogTab() {
   };
 
   const handleClearConfirm = async () => {
-    await authFetch('/api/audit/logs/clear', { method: 'DELETE' });
+    const res = await authFetch('/api/audit/logs/clear', { method: 'DELETE' });
+    const data = res.ok ? await res.json().catch(() => ({})) : {};
     setLogs([]);
     setTotal(0);
     setNextCursor(null);
-    setToast('All audit logs cleared.');
-    setTimeout(() => setToast(null), 4000);
+    const count = data?.deletedCount ?? data?.count ?? null;
+    setToast({
+      message: count != null ? `Cleared ${count} activity log ${count === 1 ? 'entry' : 'entries'}.` : 'All audit logs cleared.',
+      variant: 'success',
+    });
   };
 
   const hasFilters = !!(
@@ -129,11 +134,8 @@ export default function ActivityLogTab() {
       {/* Filter bar */}
       <AuditFilterBar onFiltersChange={handleFiltersChange} />
 
-      {/* Toast */}
       {toast && (
-        <p className="text-xs text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 px-3 py-1.5 rounded-lg">
-          {toast}
-        </p>
+        <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} />
       )}
 
       {/* Table */}
