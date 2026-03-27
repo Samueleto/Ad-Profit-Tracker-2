@@ -5,7 +5,7 @@ import type { NextRequest } from "next/server";
 const OB_DONE_COOKIE = "ob_done";
 
 // Routes that require onboarding to be complete
-const PROTECTED_ROUTES = ["/dashboard", "/settings", "/reports", "/team", "/help"];
+const PROTECTED_ROUTES = ["/dashboard", "/settings", "/reports", "/team", "/help", "/reconciliation"];
 const ONBOARDING_PATH = "/onboarding";
 
 export function middleware(request: NextRequest) {
