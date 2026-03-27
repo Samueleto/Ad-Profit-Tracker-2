@@ -4,10 +4,11 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { getAuth } from 'firebase/auth';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
-  CartesianGrid, ReferenceLine, Line, LineChart,
+  CartesianGrid, ReferenceLine,
 } from 'recharts';
-import { format, subDays, startOfMonth, differenceInDays } from 'date-fns';
-import { ChevronDown, AlertCircle, Loader2 } from 'lucide-react';
+import { format, differenceInDays } from 'date-fns';
+import { ChevronDown, AlertCircle } from 'lucide-react';
+import { useDateRangeStore } from '@/store/dateRangeStore';
 
 type Metric = 'netProfit' | 'revenue' | 'cost' | 'roi';
 type Preset = '7d' | '14d' | '30d' | 'month' | 'custom';
@@ -36,15 +37,6 @@ async function authFetch(path: string): Promise<Response> {
   return fetch(path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
 }
 
-function presetRange(p: Preset): { from: string; to: string } {
-  const today = new Date();
-  const fmt = (d: Date) => format(d, 'yyyy-MM-dd');
-  if (p === '7d') return { from: fmt(subDays(today, 6)), to: fmt(today) };
-  if (p === '14d') return { from: fmt(subDays(today, 13)), to: fmt(today) };
-  if (p === '30d') return { from: fmt(subDays(today, 29)), to: fmt(today) };
-  if (p === 'month') return { from: fmt(startOfMonth(today)), to: fmt(today) };
-  return { from: fmt(subDays(today, 6)), to: fmt(today) };
-}
 
 function computeMovingAvg(data: DayPoint[], field: Metric, window = 7): DayPoint[] {
   return data.map((pt, i) => {
@@ -126,13 +118,33 @@ function SnapshotPanel({ date, onClose }: SnapshotPanelProps) {
   );
 }
 
+// Map DailyProfitTrendSection preset ids to/from useDateRangeStore preset ids
+const PRESET_TO_STORE: Record<Preset, string> = {
+  '7d': 'last7',
+  '14d': 'last14',
+  '30d': 'last30',
+  'month': 'thisMonth',
+  'custom': 'custom',
+};
+const STORE_TO_PRESET: Record<string, Preset> = {
+  'last7': '7d',
+  'last14': '14d',
+  'last30': '30d',
+  'last90': '30d', // approximate
+  'thisMonth': 'month',
+  'custom': 'custom',
+};
+
 interface DailyProfitTrendSectionProps {
   onSyncNow?: () => void;
 }
 
 export default function DailyProfitTrendSection({ onSyncNow }: DailyProfitTrendSectionProps) {
+  const { fromDate: storeFrom, toDate: storeTo, preset: storePreset, setPreset: storeSetPreset, setCustomRange, applyCustomRange } = useDateRangeStore();
+
   const [metric, setMetric] = useState<Metric>('netProfit');
-  const [preset, setPreset] = useState<Preset>('7d');
+  // Derive local preset from store preset
+  const preset: Preset = STORE_TO_PRESET[storePreset] ?? '30d';
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
   const [rangeError, setRangeError] = useState<string | null>(null);
@@ -143,18 +155,40 @@ export default function DailyProfitTrendSection({ onSyncNow }: DailyProfitTrendS
   const [insightsOpen, setInsightsOpen] = useState(false);
   const chartRef = useRef<HTMLDivElement>(null);
 
-  const getRange = useCallback((): { from: string; to: string } | null => {
-    if (preset === 'custom') {
-      if (!customFrom || !customTo) return null;
-      if (differenceInDays(new Date(customTo), new Date(customFrom)) > 90) return null;
-      return { from: customFrom, to: customTo };
+  // When store preset is custom, seed custom inputs from store dates
+  useEffect(() => {
+    if (storePreset === 'custom' && storeFrom && storeTo) {
+      setCustomFrom(storeFrom);
+      setCustomTo(storeTo);
     }
-    return presetRange(preset);
-  }, [preset, customFrom, customTo]);
+  }, [storePreset, storeFrom, storeTo]);
+
+  const handlePresetClick = (p: Preset) => {
+    if (p === 'custom') {
+      storeSetPreset('custom');
+    } else {
+      storeSetPreset(PRESET_TO_STORE[p] as Parameters<typeof storeSetPreset>[0]);
+    }
+  };
+
+  const handleCustomFrom = (v: string) => {
+    setCustomFrom(v);
+    setRangeError(customTo && differenceInDays(new Date(customTo), new Date(v)) > 90 ? 'Max 90 days.' : null);
+    setCustomRange(v, customTo);
+  };
+
+  const handleCustomTo = (v: string) => {
+    setCustomTo(v);
+    setRangeError(customFrom && differenceInDays(new Date(v), new Date(customFrom)) > 90 ? 'Max 90 days.' : null);
+    setCustomRange(customFrom, v);
+    if (customFrom && v && differenceInDays(new Date(v), new Date(customFrom)) <= 90) {
+      applyCustomRange();
+    }
+  };
 
   const fetchData = useCallback(async () => {
-    const range = getRange();
-    if (!range) return;
+    if (!storeFrom || !storeTo) return;
+    const range = { from: storeFrom, to: storeTo };
     setLoading(true);
     setErrorType('none');
     try {
@@ -199,18 +233,9 @@ export default function DailyProfitTrendSection({ onSyncNow }: DailyProfitTrendS
       setSeries(computeMovingAvg(raw, 'netProfit'));
     } catch { setErrorType('500'); }
     finally { setLoading(false); }
-  }, [getRange]);
+  }, [storeFrom, storeTo]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
-
-  const handleCustomFrom = (v: string) => {
-    setCustomFrom(v);
-    setRangeError(customTo && differenceInDays(new Date(customTo), new Date(v)) > 90 ? 'Max 90 days.' : null);
-  };
-  const handleCustomTo = (v: string) => {
-    setCustomTo(v);
-    setRangeError(customFrom && differenceInDays(new Date(v), new Date(customFrom)) > 90 ? 'Max 90 days.' : null);
-  };
 
   const exportChart = () => {
     const svg = chartRef.current?.querySelector('svg');
@@ -257,7 +282,7 @@ export default function DailyProfitTrendSection({ onSyncNow }: DailyProfitTrendS
         <div className="flex flex-wrap items-center gap-2">
           <div className="flex gap-1">
             {(['7d', '14d', '30d', 'month', 'custom'] as const).map(p => (
-              <button key={p} onClick={() => setPreset(p)}
+              <button key={p} onClick={() => handlePresetClick(p)}
                 className={`px-2 py-1 text-xs rounded border transition-colors ${
                   preset === p ? 'bg-blue-600 border-blue-600 text-white'
                   : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
@@ -298,7 +323,7 @@ export default function DailyProfitTrendSection({ onSyncNow }: DailyProfitTrendS
       {!loading && errorType === '404' && (
         <div className="text-center py-10">
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-2">No data found for selected range.</p>
-          <button onClick={() => setPreset('7d')} className="text-xs text-blue-600 underline">Reset to Last 7 days</button>
+          <button onClick={() => handlePresetClick('7d')} className="text-xs text-blue-600 underline">Reset to Last 7 days</button>
         </div>
       )}
       {!loading && errorType === '500' && (

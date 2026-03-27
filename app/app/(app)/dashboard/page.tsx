@@ -16,6 +16,7 @@ import ExoClickNetworkTab from '@/features/exoclick/components/ExoClickNetworkTa
 import ZeydooNetworkTab from '@/features/zeydoo/components/ZeydooNetworkTab';
 import FinancialMetricsSection from '@/features/dashboard/components/FinancialMetricsSection';
 import ConnectedROISection from '@/features/roi/components/ConnectedROISection';
+import DailyProfitTrendSection from '@/features/dashboard/components/DailyProfitTrendSection';
 import PerNetworkAnalyticsTabsSection from '@/features/network-analytics/components/PerNetworkAnalyticsTabsSection';
 import PerformanceBenchmarkingTab from '@/features/benchmarking/components/PerformanceBenchmarkingTab';
 import FilterToolbar from '@/features/data-filtering/components/FilterToolbar';
@@ -115,6 +116,13 @@ export default function DashboardPage() {
           />
 
           <ConnectedROISection />
+
+          <DailyProfitTrendSection
+            onSyncNow={() => {
+              setSyncPanelOpen(true);
+              setTimeout(() => syncRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+            }}
+          />
 
           <div id="daily-trend">
             <PerNetworkAnalyticsTabsSection dateFrom={fromDate} dateTo={toDate} />
