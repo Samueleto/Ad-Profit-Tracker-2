@@ -40,8 +40,9 @@ export default function ZeydooStatsOverview({ dateFrom, dateTo, onDateChange }: 
     onDateChange(dateFrom, v);
   };
 
-  const rows = data?.rows ?? [];
-  const totals = data?.totals;
+  const d = data as Record<string, unknown> | null | undefined;
+  const rows = (d?.rows as unknown[] | undefined) ?? [];
+  const totals = d?.totals as Record<string, unknown> | undefined;
 
   return (
     <div className="space-y-4">
@@ -111,7 +112,7 @@ export default function ZeydooStatsOverview({ dateFrom, dateTo, onDateChange }: 
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-              {rows.map((row: { date: string; revenue: number; impressions: number; clicks: number }) => (
+              {(rows as Array<{ date: string; revenue: number; impressions: number; clicks: number }>).map((row) => (
                 <tr key={row.date} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                   <td className="px-3 py-2.5 font-mono text-xs text-gray-900 dark:text-gray-100">{row.date}</td>
                   <td className="px-3 py-2.5 text-gray-700 dark:text-gray-300">${Number(row.revenue).toFixed(4)}</td>

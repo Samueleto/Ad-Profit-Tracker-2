@@ -41,8 +41,8 @@ export default function ExoClickCountryBreakdownView() {
   const [sortKey, setSortKey] = useState<SortKey>('cost');
   const [sortAsc, setSortAsc] = useState(false);
 
-  const { data, isLoading, error } = useExoClickStatsByCountry(dateFrom, dateTo, limit);
-  const rows: CountryRow[] = data?.rows ?? data?.countries ?? [];
+  const { countries, isLoading, error } = useExoClickStatsByCountry(dateFrom, dateTo, limit);
+  const rows: CountryRow[] = (countries as CountryRow[] | null) ?? [];
 
   const sorted = [...rows].sort((a, b) => {
     if (sortKey === 'cost') return sortAsc ? a.cost - b.cost : b.cost - a.cost;

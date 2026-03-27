@@ -44,9 +44,11 @@ async function authFetch(
   onAuthExpired: () => void
 ): Promise<Response> {
   const auth = getAuth();
-  const getToken = async (forceRefresh = false) => {
+  const getToken = async (forceRefresh = false): Promise<Record<string, string>> => {
     const token = await auth.currentUser?.getIdToken(forceRefresh);
-    return token ? { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } : { 'Content-Type': 'application/json' };
+    const h: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) h.Authorization = `Bearer ${token}`;
+    return h;
   };
 
   let headers = await getToken();

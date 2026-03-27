@@ -48,9 +48,10 @@ export default function ZeydooLatestCard({ onSync }: { onSync?: () => void }) {
     );
   }
 
-  const latest = data?.latest ?? data;
-  const syncStatus = data?.lastSyncStatus ?? latest?.lastSyncStatus;
-  const syncedAt = data?.lastSyncedAt ?? latest?.lastSyncedAt;
+  const d = data as Record<string, unknown> | null;
+  const latest = (d?.latest ?? d) as Record<string, unknown> | null;
+  const syncStatus = (d?.lastSyncStatus ?? latest?.lastSyncStatus) as string | undefined;
+  const syncedAt = (d?.lastSyncedAt ?? latest?.lastSyncedAt) as string | undefined;
 
   return (
     <div className="space-y-3">

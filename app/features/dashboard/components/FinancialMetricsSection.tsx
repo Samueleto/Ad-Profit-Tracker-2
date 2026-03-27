@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { getAuth } from 'firebase/auth';
 import { TrendingUp, TrendingDown, Minus, RefreshCw, Loader2, Download } from 'lucide-react';
 import {
@@ -9,7 +9,7 @@ import {
 import { format } from 'date-fns';
 import DailyProfitTrendSection from './DailyProfitTrendSection';
 import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
-import type { Preset } from '../hooks/useDashboardMetrics';
+import type { Preset, KPIs } from '../hooks/useDashboardMetrics';
 
 // ─── Auth helper (used by ROICard only for its per-network breakdown) ─────────
 async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
@@ -311,7 +311,7 @@ export default function FinancialMetricsSection({ onSyncNow, onExport }: Financi
       )}
 
       {/* Success state */}
-      {!loading && !fetchError && data && !isEmpty && (
+      {!loading && !fetchError && data && data.kpis && !isEmpty && (
         <>
           {/* KPI cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

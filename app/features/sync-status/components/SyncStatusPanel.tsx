@@ -1,6 +1,7 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ChevronDown, AlertCircle } from 'lucide-react';
 import type { NetworkSyncState } from '../types';
 import HealthBanner from './HealthBanner';
@@ -9,8 +10,10 @@ import AnomalyAlertStrip from './AnomalyAlertStrip';
 import ActivityFeedList from './ActivityFeedList';
 import RefreshButton from './RefreshButton';
 import { useSyncStatus } from '../hooks/useSyncStatus';
+import { Toast } from '@/components/ui/Toast';
 
 export default function SyncStatusPanel() {
+  const router = useRouter();
   const {
     networks,
     overallHealth,
@@ -26,11 +29,12 @@ export default function SyncStatusPanel() {
 
   const [activityOpen, setActivityOpen] = useState(false);
 
-  // Redirect on session expiry
-  if (sessionExpired) {
-    if (typeof window !== 'undefined') window.location.href = '/';
-    return null;
-  }
+  // Redirect on session expiry via Next.js router
+  useEffect(() => {
+    if (sessionExpired) {
+      router.replace('/');
+    }
+  }, [sessionExpired, router]);
 
   if (isLoading) {
     return (
@@ -56,7 +60,19 @@ export default function SyncStatusPanel() {
     );
   }
 
+  // 403 Access Denied inline banner
+  if (error && (error as unknown as { type?: string })?.type === '403') {
+    return (
+      <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-xl text-sm text-red-700 dark:text-red-400 flex items-center gap-2">
+        <AlertCircle className="w-4 h-4 flex-shrink-0" />
+        Access Denied: You don&apos;t have permission to view sync status.
+      </div>
+    );
+  }
+
   return (
+    <>
+    {sessionExpired && <Toast message="Session expired. Please sign in again." variant="error" />}
     <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-4 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -119,5 +135,6 @@ export default function SyncStatusPanel() {
         )}
       </div>
     </div>
+    </>
   );
 }

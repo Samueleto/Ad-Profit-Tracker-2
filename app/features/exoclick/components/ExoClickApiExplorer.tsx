@@ -6,7 +6,8 @@ import { useExoClickRawResponse } from '../hooks/useExoClickStats';
 
 export default function ExoClickApiExplorer() {
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const { data, isLoading, error, refetch } = useExoClickRawResponse(date);
+  const { records, fieldSchema, isLoading, error, refetch } = useExoClickRawResponse(date);
+  const hasData = records !== null && records !== undefined;
 
   return (
     <div className="space-y-4">
@@ -30,15 +31,15 @@ export default function ExoClickApiExplorer() {
       {error && (
         <div className="flex items-center gap-2 text-sm text-red-500">
           <AlertCircle className="w-4 h-4" />
-          {error.message}
+          {(error as { message?: string }).message ?? 'Error loading response'}
           <button onClick={() => refetch()} className="underline">Retry</button>
         </div>
       )}
 
-      {data && (
+      {hasData && (
         <div className="space-y-4">
           {/* Field Schema */}
-          {data.fieldSchema && (
+          {fieldSchema && (
             <div>
               <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">Field Schema</h4>
               <div className="overflow-x-auto">
@@ -51,7 +52,7 @@ export default function ExoClickApiExplorer() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                    {(data.fieldSchema as Array<{ field: string; type: string; description?: string }>).map((f, i: number) => (
+                    {(fieldSchema as Array<{ field: string; type: string; description?: string }>).map((f, i: number) => (
                       <tr key={i}>
                         <td className="px-3 py-2 font-mono text-gray-900 dark:text-gray-100">{f.field}</td>
                         <td className="px-3 py-2 text-gray-500 dark:text-gray-400">{f.type}</td>
@@ -67,10 +68,10 @@ export default function ExoClickApiExplorer() {
           {/* Raw records */}
           <div>
             <h4 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-2">
-              Raw Records ({Array.isArray(data.records) ? data.records.length : 0})
+              Raw Records ({Array.isArray(records) ? records.length : 0})
             </h4>
             <pre className="text-xs bg-gray-100 dark:bg-gray-900 rounded-lg p-3 overflow-auto max-h-80 font-mono text-gray-700 dark:text-gray-300">
-              {JSON.stringify(data.records ?? data, null, 2)}
+              {JSON.stringify(records, null, 2)}
             </pre>
           </div>
         </div>

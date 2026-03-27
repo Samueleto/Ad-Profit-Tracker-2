@@ -98,6 +98,9 @@ export default function DashboardPage() {
 
           <PerNetworkAnalyticsTabsSection dateFrom={defaultDateFrom} dateTo={defaultDateTo} />
 
+          {/* Sync Status Panel — live polling, circuit breaker, anomalies */}
+          <SyncStatusPanel />
+
           {/* Collapsible ManualRefreshPanel */}
           <div ref={syncRef} className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
             <button
@@ -113,6 +116,9 @@ export default function DashboardPage() {
               </div>
             )}
           </div>
+
+          {/* Reconciliation anchor — target for CriticalAnomaliesStrip 'View Details' link */}
+          <div id="reconciliation" />
         </div>
       )}
 

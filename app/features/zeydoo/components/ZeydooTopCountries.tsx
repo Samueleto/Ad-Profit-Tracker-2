@@ -11,8 +11,8 @@ interface ZeydooTopCountriesProps {
 
 export default function ZeydooTopCountries({ dateFrom, dateTo }: ZeydooTopCountriesProps) {
   const [limit, setLimit] = useState(20);
-  const { data, isLoading, error } = useZeydooStatsByCountry(dateFrom, dateTo, limit);
-  const rows = data?.rows ?? data?.countries ?? [];
+  const { countries, isLoading, error } = useZeydooStatsByCountry(dateFrom, dateTo, limit);
+  const rows = countries ?? [];
 
   return (
     <div className="space-y-3">
@@ -53,7 +53,7 @@ export default function ZeydooTopCountries({ dateFrom, dateTo }: ZeydooTopCountr
                     No country data for this period.
                   </td>
                 </tr>
-              ) : rows.map((row: { countryCode: string; countryName?: string; flagEmoji?: string; revenue: number; revenueShare?: number }) => (
+              ) : (rows as Array<{ countryCode: string; countryName?: string; flagEmoji?: string; revenue: number; revenueShare?: number }>).map((row) => (
                 <tr key={row.countryCode} className="hover:bg-gray-50 dark:hover:bg-gray-800/50">
                   <td className="px-3 py-2.5 text-gray-900 dark:text-gray-100">
                     {row.flagEmoji && <span className="mr-1.5">{row.flagEmoji}</span>}
