@@ -22,6 +22,7 @@ import PerNetworkAnalyticsTabsSection from '@/features/network-analytics/compone
 import PerformanceBenchmarkingTab from '@/features/benchmarking/components/PerformanceBenchmarkingTab';
 import FilterToolbar from '@/features/data-filtering/components/FilterToolbar';
 import ApiExplorerTab from '@/features/api-explorer/components/ApiExplorerTab';
+import ScheduledSyncDashboard from '@/features/sync/components/ScheduledSyncDashboard';
 
 type DashboardTab = 'overview' | 'compare' | 'benchmarks' | 'exoclick' | 'rollerads' | 'zeydoo' | 'propush' | 'api-explorer';
 
@@ -134,6 +135,11 @@ export default function DashboardPage() {
 
           {/* Sync Status Panel — live polling, circuit breaker, anomalies */}
           <SyncStatusPanel />
+
+          {/* Scheduled Sync Dashboard — per-network status, retry, history */}
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
+            <ScheduledSyncDashboard />
+          </div>
 
           {/* Collapsible ManualRefreshPanel */}
           <div id="sync" ref={syncRef} className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
