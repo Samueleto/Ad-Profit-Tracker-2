@@ -185,8 +185,21 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {activeTab === 'benchmarks' && (
-        <PerformanceBenchmarkingTab dateFrom={fromDate} dateTo={toDate} />
+      {/* Benchmarks — lazy-mount: renders only after first activation, stays mounted (hidden) after */}
+      {activatedTabs.has('benchmarks') && (
+        <div className={activeTab !== 'benchmarks' ? 'hidden' : ''}>
+          <PerformanceBenchmarkingTab
+            dateFrom={fromDate}
+            dateTo={toDate}
+            onSyncNow={() => {
+              handleTabChange('overview' as DashboardTab);
+              setTimeout(() => {
+                setSyncPanelOpen(true);
+                setTimeout(() => syncRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+              }, 50);
+            }}
+          />
+        </div>
       )}
 
       {activeTab === 'exoclick' && <ExoClickNetworkTab />}

@@ -1,12 +1,13 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { getAuth } from 'firebase/auth';
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { Settings, AlertTriangle } from 'lucide-react';
 import BenchmarkSettingsModal from './BenchmarkSettingsModal';
+import SharedMetricShareBar from '@/features/geo-breakdown/components/MetricShareBar';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -49,6 +50,7 @@ interface TrendPoint {
 
 interface BenchmarkData {
   score: number | null;
+  scoreComputedAt: string | null;
   rows: NetworkRow[];
   trend: TrendPoint[];
 }
@@ -68,7 +70,12 @@ async function authFetch(path: string): Promise<Response> {
 
 // ─── Circular Gauge ───────────────────────────────────────────────────────────
 
-function ScoreGauge({ score }: { score: number | null }) {
+function isStale(computedAt: string | null): boolean {
+  if (!computedAt) return false;
+  return Date.now() - new Date(computedAt).getTime() > 24 * 60 * 60 * 1000;
+}
+
+function ScoreGauge({ score, computedAt }: { score: number | null; computedAt?: string | null }) {
   if (score === null) {
     return (
       <div className="flex flex-col items-center gap-1">
@@ -105,6 +112,9 @@ function ScoreGauge({ score }: { score: number | null }) {
         </div>
       </div>
       <span className="text-xs text-gray-500 dark:text-gray-400">Performance Score</span>
+      {computedAt && isStale(computedAt) && (
+        <span className="text-xs text-amber-500 dark:text-amber-400">Score may be stale</span>
+      )}
     </div>
   );
 }
@@ -114,20 +124,6 @@ function ShimmerGauge() {
     <div className="flex flex-col items-center gap-1">
       <div className="w-20 h-20 rounded-full bg-gray-100 dark:bg-gray-800 animate-pulse" />
       <div className="w-24 h-3 bg-gray-100 dark:bg-gray-800 rounded animate-pulse" />
-    </div>
-  );
-}
-
-// ─── MetricShareBar ───────────────────────────────────────────────────────────
-
-function MetricShareBar({ actual, benchmark }: { actual: number | null; benchmark: number | null }) {
-  if (actual === null || benchmark === null || benchmark === 0) {
-    return <div className="w-20 h-2 bg-gray-200 dark:bg-gray-700 rounded-full" />;
-  }
-  const pct = Math.min(100, Math.max(0, (actual / (benchmark * 1.5)) * 100));
-  return (
-    <div className="w-20 h-2 bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
-      <div className="h-full bg-blue-500 rounded-full" style={{ width: `${pct}%` }} />
     </div>
   );
 }
@@ -154,18 +150,21 @@ function fmt(val: number | null, metric: BenchMetric): string {
 interface PerformanceBenchmarkingTabProps {
   dateFrom: string;
   dateTo: string;
+  onSyncNow?: () => void;
 }
 
-export default function PerformanceBenchmarkingTab({ dateFrom, dateTo }: PerformanceBenchmarkingTabProps) {
+export default function PerformanceBenchmarkingTab({ dateFrom, dateTo, onSyncNow }: PerformanceBenchmarkingTabProps) {
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [data, setData] = useState<BenchmarkData | null>(null);
   const [metric, setMetric] = useState<BenchMetric>('roi');
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const loadingRef = useRef(false);
 
-  const load = useCallback(async () => {
-    if (loaded || loading) return;
+  const doFetch = useCallback(async () => {
+    if (loadingRef.current) return;
+    loadingRef.current = true;
     setLoading(true);
     setError(null);
     try {
@@ -201,20 +200,39 @@ export default function PerformanceBenchmarkingTab({ dateFrom, dateTo }: Perform
           historicalAvg: p.historicalAvg,
         }));
 
-        setData({ score: scoreData?.score ?? null, rows, trend });
+        setData({
+          score: scoreData?.score ?? scoreData?.performanceScore ?? null,
+          scoreComputedAt: scoreData?.computedAt ?? scoreData?.performanceScoreComputedAt ?? null,
+          rows,
+          trend,
+        });
       }
       setLoaded(true);
     } catch {
       setError('Failed to load benchmark data.');
     } finally {
       setLoading(false);
+      loadingRef.current = false;
     }
-  }, [loaded, loading, dateFrom, dateTo, metric]);
+  }, [dateFrom, dateTo, metric]);
 
-  // Trigger load on first render of this component (lazy)
-  if (!loaded && !loading && !error) {
-    load();
-  }
+  // Reset loaded state when date range changes so data is re-fetched
+  const prevDatesRef = useRef({ dateFrom, dateTo });
+  useEffect(() => {
+    const prev = prevDatesRef.current;
+    if (prev.dateFrom !== dateFrom || prev.dateTo !== dateTo) {
+      prevDatesRef.current = { dateFrom, dateTo };
+      setLoaded(false);
+      setError(null);
+    }
+  }, [dateFrom, dateTo]);
+
+  // Trigger fetch whenever loaded becomes false (initial mount + after date change + after settings save)
+  useEffect(() => {
+    if (!loaded && !loadingRef.current) {
+      doFetch();
+    }
+  }, [loaded, doFetch]);
 
   // Recompute row data when metric changes (without refetching)
   // rows already depend on metric in the load function above;
@@ -233,7 +251,7 @@ export default function PerformanceBenchmarkingTab({ dateFrom, dateTo }: Perform
           </p>
         </div>
         <div className="flex items-center gap-3">
-          {loading ? <ShimmerGauge /> : <ScoreGauge score={data?.score ?? null} />}
+          {loading ? <ShimmerGauge /> : <ScoreGauge score={data?.score ?? null} computedAt={data?.scoreComputedAt} />}
           <button
             onClick={() => setSettingsOpen(true)}
             className="flex items-center gap-1.5 px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
@@ -274,12 +292,21 @@ export default function PerformanceBenchmarkingTab({ dateFrom, dateTo }: Perform
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
             No data for this date range. Sync your networks to see benchmark comparisons.
           </p>
-          <a
-            href="#sync"
-            className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium"
-          >
-            Sync Now →
-          </a>
+          {onSyncNow ? (
+            <button
+              onClick={onSyncNow}
+              className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium"
+            >
+              Sync Now →
+            </button>
+          ) : (
+            <a
+              href="#sync"
+              className="text-sm text-blue-600 dark:text-blue-400 hover:underline font-medium"
+            >
+              Sync Now →
+            </a>
+          )}
         </div>
       )}
 
@@ -332,7 +359,13 @@ export default function PerformanceBenchmarkingTab({ dateFrom, dateTo }: Perform
                             {fmt(row.industryBenchmark, metric)}
                           </td>
                           <td className="px-4 py-3">
-                            <MetricShareBar actual={row.actual} benchmark={row.industryBenchmark} />
+                            <SharedMetricShareBar
+                              value={
+                                row.actual !== null && row.industryBenchmark !== null && row.industryBenchmark !== 0
+                                  ? Math.min(100, Math.max(0, (row.actual / (row.industryBenchmark * 1.5)) * 100))
+                                  : 0
+                              }
+                            />
                           </td>
                         </tr>
                       );
@@ -390,7 +423,11 @@ export default function PerformanceBenchmarkingTab({ dateFrom, dateTo }: Perform
       {settingsOpen && (
         <BenchmarkSettingsModal
           onClose={() => setSettingsOpen(false)}
-          onSaved={() => {}}
+          onSaved={() => {
+            setSettingsOpen(false);
+            setLoaded(false);
+            setError(null);
+          }}
         />
       )}
     </div>
