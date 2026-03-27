@@ -78,7 +78,7 @@ export default function AcceptInvitationPage() {
       if (res.status === 403) { setErrorMessage('This invitation was sent to a different email address.'); return; }
       if (!res.ok) { setErrorMessage('Failed to accept invitation.'); return; }
       const data = await res.json();
-      router.push(`/dashboard?welcome=${encodeURIComponent(data.workspaceName ?? invitation?.workspaceName ?? '')}`);
+      router.replace(`/dashboard?welcome=${encodeURIComponent(data.workspaceName ?? invitation?.workspaceName ?? '')}`);
     } finally {
       setSubmitting(false);
     }

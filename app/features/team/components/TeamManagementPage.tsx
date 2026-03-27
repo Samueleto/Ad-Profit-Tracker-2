@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { ChevronDown, UserPlus, AlertCircle } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
 import type { WorkspaceMember, WorkspaceMetadata, WorkspaceInvitationSafe } from '../types';
@@ -53,6 +54,7 @@ export default function TeamManagementPage() {
   const [roleChangeTarget, setRoleChangeTarget] = useState<WorkspaceMember | null>(null);
   const [selectedRole, setSelectedRole] = useState<'admin' | 'member'>('member');
 
+  const router = useRouter();
   const auth = getAuth();
   const currentUserId = auth.currentUser?.uid ?? '';
 
@@ -154,6 +156,7 @@ export default function TeamManagementPage() {
       onConfirm: async () => {
         await authFetch(`/api/team/members/${currentUserId}`, { method: 'DELETE' });
         setConfirmDialog(null);
+        router.replace('/dashboard');
       },
     });
   };

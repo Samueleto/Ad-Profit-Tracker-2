@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
+import { useSearchParams, useRouter } from 'next/navigation';
 import ManualRefreshPanel from '@/features/manual-refresh/components/ManualRefreshPanel';
 import SyncStatusPanel from '@/features/sync-status/components/SyncStatusPanel';
 import GeoBreakdownSection from '@/features/geo-breakdown/components/GeoBreakdownSection';
@@ -10,6 +11,7 @@ import ExportModal from '@/features/excel-export/components/ExportModal';
 import { useDashboardStore } from '@/store/dashboardStore';
 import { useDateRangeStore } from '@/store/dateRangeStore';
 import { Download, ChevronDown } from 'lucide-react';
+import { Toast } from '@/components/ui/Toast';
 import ExoClickNetworkTab from '@/features/exoclick/components/ExoClickNetworkTab';
 import ZeydooNetworkTab from '@/features/zeydoo/components/ZeydooNetworkTab';
 import FinancialMetricsSection from '@/features/dashboard/components/FinancialMetricsSection';
@@ -37,6 +39,16 @@ export default function DashboardPage() {
   const [activatedTabs, setActivatedTabs] = useState<Set<DashboardTab>>(new Set(['overview']));
   const { exportModalOpen, setExportModalOpen } = useDashboardStore();
   const { fromDate, toDate } = useDateRangeStore();
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const welcomeWorkspace = searchParams.get('welcome');
+
+  // Show welcome toast after invitation acceptance, then remove the param from URL
+  useEffect(() => {
+    if (welcomeWorkspace) {
+      router.replace('/dashboard');
+    }
+  }, [welcomeWorkspace, router]);
   const [syncPanelOpen, setSyncPanelOpen] = useState(false);
   const syncRef = useRef<HTMLDivElement>(null);
 
@@ -165,6 +177,11 @@ export default function DashboardPage() {
 
       {/* Export Modal */}
       {exportModalOpen && <ExportModal onClose={() => setExportModalOpen(false)} />}
+
+      {/* Welcome toast after invitation acceptance */}
+      {welcomeWorkspace && (
+        <Toast message={`Welcome to ${welcomeWorkspace}!`} variant="success" />
+      )}
     </div>
   );
 }

@@ -1,25 +1,21 @@
 "use client";
 
-import { useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import LoginModal from "@/components/auth/LoginModal";
 
-/**
- * Root route (/).
- * - Loading: show a full-page spinner (no flash of modal or protected content).
- * - Authenticated: redirect to /dashboard.
- * - Unauthenticated: show the LoginModal directly on this route.
- */
-export default function RootPage() {
+function RootPageInner() {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   useEffect(() => {
     if (!loading && user) {
-      router.replace("/dashboard");
+      const returnUrl = searchParams.get("returnUrl");
+      router.replace(returnUrl ?? "/dashboard");
     }
-  }, [user, loading, router]);
+  }, [user, loading, router, searchParams]);
 
   if (loading) {
     return (
@@ -37,5 +33,23 @@ export default function RootPage() {
     <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
       <LoginModal isOpen={true} />
     </div>
+  );
+}
+
+/**
+ * Root route (/).
+ * - Loading: show a full-page spinner (no flash of modal or protected content).
+ * - Authenticated: redirect to returnUrl if present, otherwise /dashboard.
+ * - Unauthenticated: show the LoginModal directly on this route.
+ */
+export default function RootPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-white dark:bg-gray-950">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      </div>
+    }>
+      <RootPageInner />
+    </Suspense>
   );
 }
