@@ -49,8 +49,9 @@ export default function DataAvailabilityDot() {
       }
     };
 
-    fetchAvailability();
-    return () => { cancelled = true; };
+    // Debounce: wait 300ms before firing so rapid preset switches don't fire multiple requests
+    const timer = setTimeout(() => fetchAvailability(), 300);
+    return () => { cancelled = true; clearTimeout(timer); };
   }, [fromDate, toDate, setDataAvailability]);
 
   if (dataAvailability === 'loading') {

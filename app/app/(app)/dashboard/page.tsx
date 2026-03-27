@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useRef } from 'react';
-import { format, subDays } from 'date-fns';
 import ManualRefreshPanel from '@/features/manual-refresh/components/ManualRefreshPanel';
 import SyncStatusPanel from '@/features/sync-status/components/SyncStatusPanel';
 import GeoBreakdownSection from '@/features/geo-breakdown/components/GeoBreakdownSection';
@@ -9,6 +8,7 @@ import ComparativeNetworkAnalysisTab from '@/features/comparative-analysis/compo
 import DateRangeToolbar from '@/features/date-range/components/DateRangeToolbar';
 import ExportModal from '@/features/excel-export/components/ExportModal';
 import { useDashboardStore } from '@/store/dashboardStore';
+import { useDateRangeStore } from '@/store/dateRangeStore';
 import { Download, ChevronDown } from 'lucide-react';
 import ExoClickNetworkTab from '@/features/exoclick/components/ExoClickNetworkTab';
 import ZeydooNetworkTab from '@/features/zeydoo/components/ZeydooNetworkTab';
@@ -36,11 +36,9 @@ export default function DashboardPage() {
   // Track which tabs have ever been activated — for lazy-mount (mount once, keep in DOM)
   const [activatedTabs, setActivatedTabs] = useState<Set<DashboardTab>>(new Set(['overview']));
   const { exportModalOpen, setExportModalOpen } = useDashboardStore();
+  const { fromDate, toDate } = useDateRangeStore();
   const [syncPanelOpen, setSyncPanelOpen] = useState(false);
   const syncRef = useRef<HTMLDivElement>(null);
-  const today = new Date();
-  const defaultDateFrom = format(subDays(today, 29), 'yyyy-MM-dd');
-  const defaultDateTo = format(today, 'yyyy-MM-dd');
 
   const handleTabChange = (tab: DashboardTab) => {
     setActiveTab(tab);
@@ -71,7 +69,7 @@ export default function DashboardPage() {
       <DateRangeToolbar />
 
       {/* Filter toolbar — sticky, below date range */}
-      <FilterToolbar dateFrom={defaultDateFrom} dateTo={defaultDateTo} />
+      <FilterToolbar dateFrom={fromDate} dateTo={toDate} />
 
       {/* Tab bar */}
       <div className="border-b border-gray-200 dark:border-gray-700">
@@ -104,7 +102,7 @@ export default function DashboardPage() {
           />
 
           <div id="daily-trend">
-            <PerNetworkAnalyticsTabsSection dateFrom={defaultDateFrom} dateTo={defaultDateTo} />
+            <PerNetworkAnalyticsTabsSection dateFrom={fromDate} dateTo={toDate} />
           </div>
 
           {/* Geo breakdown — below daily trend */}
@@ -144,7 +142,7 @@ export default function DashboardPage() {
       )}
 
       {activeTab === 'benchmarks' && (
-        <PerformanceBenchmarkingTab dateFrom={defaultDateFrom} dateTo={defaultDateTo} />
+        <PerformanceBenchmarkingTab dateFrom={fromDate} dateTo={toDate} />
       )}
 
       {activeTab === 'exoclick' && <ExoClickNetworkTab />}
