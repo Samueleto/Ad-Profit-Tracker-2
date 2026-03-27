@@ -1,20 +1,21 @@
 'use client';
 
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import dynamic from 'next/dynamic';
+import Link from 'next/link';
 import { getAuth } from 'firebase/auth';
 import { ChevronDown, Loader2, RefreshCw, Copy, Check, AlertCircle, ExternalLink } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
+import { useApiExplorerStore, type NetworkId } from '@/store/apiExplorerStore';
 
 // Dynamically import react-json-view (client-only)
 const ReactJson = dynamic(() => import('react-json-view'), { ssr: false });
 
 // ─── Network definitions ──────────────────────────────────────────────────────
 
-const NETWORKS = ['exoclick', 'rollerads', 'zeydoo', 'propush'] as const;
-type Network = typeof NETWORKS[number];
+const NETWORKS: NetworkId[] = ['exoclick', 'rollerads', 'zeydoo', 'propush'];
 
-const NETWORK_META: Record<Network, {
+const NETWORK_META: Record<NetworkId, {
   label: string;
   endpoint: string;
   method: string;
@@ -103,114 +104,77 @@ async function authFetch(path: string): Promise<Response> {
   });
 }
 
-// ─── Accordion ────────────────────────────────────────────────────────────────
+// ─── Check if a network has an API key configured ─────────────────────────────
+// A HEAD/GET to the raw-response endpoint returns 401/403 or no_api_key body if not configured.
 
-interface AccordionState {
-  open: boolean;
-  loading: boolean;
-  fetching: boolean;
-  response: Record<string, unknown> | null;
-  error: string | null;
-  noApiKey: boolean;
-  noCached: boolean;
-  lastFetchedAt: string | null;
-  copied: boolean;
+async function checkNetworkConfigured(network: NetworkId): Promise<boolean> {
+  try {
+    const res = await authFetch(NETWORK_META[network].endpoint);
+    if (res.status === 401 || res.status === 403) return false;
+    if (!res.ok) return true; // other errors (5xx) — assume configured, fail gracefully
+    const data = await res.json().catch(() => null);
+    if (data?.error === 'no_api_key' || data?.notConfigured) return false;
+    return true;
+  } catch {
+    return true; // network error — assume configured
+  }
 }
 
-function NetworkAccordion({ network }: { network: Network }) {
+// ─── Accordion ────────────────────────────────────────────────────────────────
+
+function NetworkAccordion({ network }: { network: NetworkId }) {
   const meta = NETWORK_META[network];
-  const [state, setState] = useState<AccordionState>({
-    open: false,
-    loading: false,
-    fetching: false,
-    response: null,
-    error: null,
-    noApiKey: false,
-    noCached: false,
-    lastFetchedAt: null,
-    copied: false,
-  });
+  const {
+    networks,
+    loadCachedResponse,
+    fetchFreshSample,
+    clearError,
+    setConfigured,
+  } = useApiExplorerStore();
 
-  const loadCached = useCallback(async () => {
-    setState(s => ({ ...s, loading: true, error: null, noApiKey: false, noCached: false }));
-    try {
-      const res = await authFetch(meta.endpoint);
-      if (res.status === 401 || res.status === 403) {
-        setState(s => ({ ...s, loading: false, noApiKey: true }));
-        return;
-      }
-      if (res.status === 404) {
-        setState(s => ({ ...s, loading: false, noCached: true }));
-        return;
-      }
-      if (!res.ok) {
-        const msg = await res.text().catch(() => 'Unknown error');
-        setState(s => ({ ...s, loading: false, error: msg }));
-        return;
-      }
-      const data = await res.json();
-      // Check for no-api-key signal in response body
-      if (data?.error === 'no_api_key' || data?.notConfigured) {
-        setState(s => ({ ...s, loading: false, noApiKey: true }));
-        return;
-      }
-      setState(s => ({
-        ...s,
-        loading: false,
-        response: data,
-        lastFetchedAt: new Date().toISOString(),
-        noCached: false,
-      }));
-    } catch (err) {
-      setState(s => ({ ...s, loading: false, error: String(err) }));
-    }
-  }, [meta.endpoint]);
+  const state = networks[network];
+  const [open, setOpen] = useState(false);
+  const [hasTriedLoad, setHasTriedLoad] = useState(false);
+  const [copied, setCopied] = useState(false);
 
-  async function toggle() {
-    const nowOpen = !state.open;
-    setState(s => ({ ...s, open: nowOpen }));
-    if (nowOpen && !state.response && !state.loading && !state.noCached && !state.noApiKey) {
-      loadCached();
+  const handleToggle = useCallback(async () => {
+    const nowOpen = !open;
+    setOpen(nowOpen);
+    // On first expand of a configured network, load cached response
+    if (nowOpen && state.isConfigured && !hasTriedLoad && !state.cachedResponse && !state.isLoadingCached) {
+      setHasTriedLoad(true);
+      await loadCachedResponse(network);
     }
-  }
+  }, [open, state.isConfigured, state.cachedResponse, state.isLoadingCached, hasTriedLoad, loadCachedResponse, network]);
 
-  async function fetchFresh() {
-    setState(s => ({ ...s, fetching: true, error: null }));
-    try {
-      const res = await authFetch(`/api/networks/config/test-connection?network=${network}`);
-      if (!res.ok) {
-        const msg = await res.text().catch(() => 'Test connection failed');
-        setState(s => ({ ...s, fetching: false, error: msg }));
-        return;
-      }
-      const data = await res.json();
-      setState(s => ({
-        ...s,
-        fetching: false,
-        response: data,
-        lastFetchedAt: new Date().toISOString(),
-        noCached: false,
-        error: null,
-      }));
-    } catch (err) {
-      setState(s => ({ ...s, fetching: false, error: String(err) }));
+  // If config status changes to true after initial mount (config check resolves),
+  // and accordion is already open, load the cached response
+  useEffect(() => {
+    if (open && state.isConfigured && !hasTriedLoad && !state.cachedResponse && !state.isLoadingCached) {
+      setHasTriedLoad(true);
+      loadCachedResponse(network);
     }
-  }
+  }, [state.isConfigured, open, hasTriedLoad, state.cachedResponse, state.isLoadingCached, loadCachedResponse, network]);
 
   function copyJson() {
-    if (!state.response) return;
-    navigator.clipboard.writeText(JSON.stringify(state.response, null, 2))
+    if (!state.cachedResponse) return;
+    navigator.clipboard.writeText(JSON.stringify(state.cachedResponse, null, 2))
       .then(() => {
-        setState(s => ({ ...s, copied: true }));
-        setTimeout(() => setState(s => ({ ...s, copied: false })), 2000);
-      });
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      })
+      .catch(() => {});
   }
+
+  // noApiKey: network is not configured (checked on mount) or response body signals it
+  const noApiKey = !state.isConfigured;
+  const noCached = state.isConfigured && !state.cachedResponse && !state.isLoadingCached && !state.error;
 
   return (
     <div className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
       {/* Header */}
       <button
-        onClick={toggle}
+        onClick={handleToggle}
         className="w-full flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors text-left"
       >
         <div className="flex items-center gap-3">
@@ -218,12 +182,17 @@ function NetworkAccordion({ network }: { network: Network }) {
           <span className="font-mono text-xs bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 px-2 py-0.5 rounded">
             {meta.method} {meta.endpoint}
           </span>
+          {!state.isConfigured && (
+            <span className="text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 px-1.5 py-0.5 rounded">
+              Not configured
+            </span>
+          )}
         </div>
-        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${state.open ? 'rotate-180' : ''}`} />
+        <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
       {/* Body */}
-      {state.open && (
+      {open && (
         <div className="border-t border-gray-100 dark:border-gray-800 p-4 space-y-4 bg-white dark:bg-gray-900">
           {/* Parameters */}
           <div>
@@ -244,63 +213,63 @@ function NetworkAccordion({ network }: { network: Network }) {
             <div className="flex items-center justify-between mb-2">
               <h4 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">Response</h4>
               <div className="flex items-center gap-2">
-                {state.lastFetchedAt && (
+                {state.lastFetched && (
                   <span className="text-xs text-gray-400">
-                    Last fetched {formatDistanceToNow(new Date(state.lastFetchedAt), { addSuffix: true })}
+                    Last fetched {formatDistanceToNow(new Date(state.lastFetched), { addSuffix: true })}
                   </span>
                 )}
-                {state.response && (
+                {!!state.cachedResponse && (
                   <button
                     onClick={copyJson}
                     className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 px-2 py-1 border border-gray-200 dark:border-gray-700 rounded transition-colors"
                   >
-                    {state.copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
-                    {state.copied ? 'Copied!' : 'Copy JSON'}
+                    {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
+                    {copied ? 'Copied!' : 'Copy JSON'}
                   </button>
                 )}
                 <button
-                  onClick={fetchFresh}
-                  disabled={state.fetching || state.noApiKey}
+                  onClick={() => fetchFreshSample(network)}
+                  disabled={state.isFetchingFresh || noApiKey}
                   className="flex items-center gap-1 text-xs bg-blue-600 text-white px-2.5 py-1 rounded hover:bg-blue-700 disabled:opacity-60 transition-colors"
                 >
-                  {state.fetching ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
+                  {state.isFetchingFresh ? <Loader2 className="w-3 h-3 animate-spin" /> : <RefreshCw className="w-3 h-3" />}
                   Fetch Fresh Sample
                 </button>
               </div>
             </div>
 
             {/* States */}
-            {state.loading && (
+            {state.isLoadingCached && (
               <div className="space-y-2">
                 {[1, 2, 3, 4].map(i => (
                   <div key={i} className="h-4 bg-gray-100 dark:bg-gray-800 rounded animate-pulse" style={{ width: `${60 + i * 7}%` }} />
                 ))}
               </div>
             )}
-            {!state.loading && state.noApiKey && (
+            {!state.isLoadingCached && noApiKey && (
               <div className="flex items-center gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-700 dark:text-amber-400">
                 <AlertCircle className="w-4 h-4 shrink-0" />
                 <span>API key not configured for {meta.label}.</span>
-                <a href="/settings" className="flex items-center gap-1 underline font-medium hover:no-underline">
+                <Link href="/settings" className="flex items-center gap-1 underline font-medium hover:no-underline">
                   Configure in Settings <ExternalLink className="w-3 h-3" />
-                </a>
+                </Link>
               </div>
             )}
-            {!state.loading && !state.noApiKey && state.noCached && !state.response && (
+            {!state.isLoadingCached && !noApiKey && noCached && !state.cachedResponse && (
               <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg text-sm text-gray-500 dark:text-gray-400">
                 No response cached yet. Click <strong>Fetch Fresh Sample</strong> to retrieve one.
               </div>
             )}
-            {!state.loading && state.error && (
+            {!state.isLoadingCached && state.error && (
               <div className="flex items-center justify-between p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-600 dark:text-red-400">
                 <span>{state.error}</span>
-                <button onClick={loadCached} className="ml-3 text-xs underline shrink-0">Retry</button>
+                <button onClick={() => { clearError(network); loadCachedResponse(network); }} className="ml-3 text-xs underline shrink-0">Retry</button>
               </div>
             )}
-            {!state.loading && !state.noApiKey && state.response && (
+            {!state.isLoadingCached && !noApiKey && !!state.cachedResponse && (
               <div className="rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 max-h-96 overflow-y-auto bg-gray-50 dark:bg-gray-950 p-3 text-xs font-mono">
                 <ReactJson
-                  src={state.response}
+                  src={state.cachedResponse as Record<string, unknown>}
                   theme="monokai"
                   displayDataTypes={false}
                   enableClipboard={false}
@@ -343,6 +312,17 @@ function NetworkAccordion({ network }: { network: Network }) {
 // ─── Main API Explorer tab ────────────────────────────────────────────────────
 
 export default function ApiExplorerTab() {
+  const { setConfigured } = useApiExplorerStore();
+
+  // On mount: check which networks have API keys configured
+  useEffect(() => {
+    NETWORKS.forEach(async (network) => {
+      const configured = await checkNetworkConfigured(network);
+      setConfigured(network, configured);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <div className="space-y-4">
       <div className="mb-2">
