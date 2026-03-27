@@ -42,6 +42,7 @@ export interface UseGeoBreakdownResult {
   countries: GeoCountryRow[];
   loading: boolean;
   error: boolean;
+  sessionExpired: boolean;
   refresh: () => void;
 }
 
@@ -49,6 +50,7 @@ export function useGeoBreakdown(fromDate: string, toDate: string): UseGeoBreakdo
   const [countries, setCountries] = useState<GeoCountryRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -56,13 +58,34 @@ export function useGeoBreakdown(fromDate: string, toDate: string): UseGeoBreakdo
     const { fromDate: from, toDate: to } = capDateRange(fromDate, toDate);
 
     try {
-      const token = await getToken();
+      let token = await getToken();
 
       // Parallel fetch: geo-breakdown + roi enrichment
-      const [geoRes, roiRes] = await Promise.all([
+      let [geoRes, roiRes] = await Promise.all([
         authFetch(`/api/stats/geo-breakdown?from=${from}&to=${to}`, token),
         authFetch(`/api/roi/breakdown?dimension=country&from=${from}&to=${to}`, token).catch(() => null),
       ]);
+
+      // 401 — refresh token and retry once
+      if (geoRes.status === 401) {
+        try {
+          const auth = getAuth();
+          token = await (auth.currentUser?.getIdToken(true) ?? Promise.resolve(null));
+        } catch {
+          setSessionExpired(true);
+          setCountries([]);
+          return;
+        }
+        [geoRes, roiRes] = await Promise.all([
+          authFetch(`/api/stats/geo-breakdown?from=${from}&to=${to}`, token),
+          authFetch(`/api/roi/breakdown?dimension=country&from=${from}&to=${to}`, token).catch(() => null),
+        ]);
+        if (geoRes.status === 401) {
+          setSessionExpired(true);
+          setCountries([]);
+          return;
+        }
+      }
 
       if (!geoRes.ok) {
         setError(true);
@@ -97,5 +120,5 @@ export function useGeoBreakdown(fromDate: string, toDate: string): UseGeoBreakdo
     fetchData();
   }, [fetchData]);
 
-  return { countries, loading, error, refresh: fetchData };
+  return { countries, loading, error, sessionExpired, refresh: fetchData };
 }

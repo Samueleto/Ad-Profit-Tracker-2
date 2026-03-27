@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { Search } from 'lucide-react';
 import { useDateRangeStore } from '@/store/dateRangeStore';
 import type { GeoCountryRow, MetricToggle, TopNOption } from '../types';
@@ -11,6 +12,7 @@ import GeoTableSkeleton from './GeoTableSkeleton';
 import NetworkSubRow from './NetworkSubRow';
 import GeoCountryDrilldownModal from './GeoCountryDrilldownModal';
 import { useGeoBreakdown } from '../hooks/useGeoBreakdown';
+import { Toast } from '@/components/ui/Toast';
 
 function formatCurrency(value: number | null): string {
   if (value === null) return '—';
@@ -31,8 +33,15 @@ const TOP_N_OPTIONS: TopNOption[] = [10, 20, 50];
 const METRIC_OPTIONS: MetricToggle[] = ['Revenue', 'Cost', 'Profit'];
 
 export default function GeoBreakdownSection() {
+  const router = useRouter();
   const { fromDate, toDate } = useDateRangeStore();
-  const { countries, loading } = useGeoBreakdown(fromDate, toDate);
+  const { countries, loading, sessionExpired } = useGeoBreakdown(fromDate, toDate);
+
+  useEffect(() => {
+    if (sessionExpired) {
+      router.replace('/');
+    }
+  }, [sessionExpired, router]);
   const [metric, setMetric] = useState<MetricToggle>('Profit');
   const [topN, setTopN] = useState<TopNOption>(10);
   const [search, setSearch] = useState('');
@@ -73,6 +82,8 @@ export default function GeoBreakdownSection() {
   };
 
   return (
+    <>
+    {sessionExpired && <Toast message="Session expired. Please sign in again." />}
     <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
       {/* Sticky header */}
       <div className="sticky top-0 z-10 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex flex-wrap items-center gap-3">
@@ -226,5 +237,6 @@ export default function GeoBreakdownSection() {
         />
       )}
     </div>
+    </>
   );
 }

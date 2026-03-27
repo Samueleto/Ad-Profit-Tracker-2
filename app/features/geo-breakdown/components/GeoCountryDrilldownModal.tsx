@@ -182,12 +182,17 @@ export default function GeoCountryDrilldownModal({
               )}
 
               <div className="pt-2">
-                <a
-                  href={`/dashboard?section=trend&country=${countryCode}`}
+                <button
+                  onClick={() => {
+                    onClose();
+                    setTimeout(() => {
+                      document.getElementById('daily-trend')?.scrollIntoView({ behavior: 'smooth' });
+                    }, 100);
+                  }}
                   className="text-sm text-blue-600 dark:text-blue-400 hover:underline"
                 >
                   View Full Trend →
-                </a>
+                </button>
               </div>
             </>
           )}

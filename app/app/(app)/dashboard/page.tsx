@@ -96,13 +96,18 @@ export default function DashboardPage() {
             }}
           />
 
-          <PerNetworkAnalyticsTabsSection dateFrom={defaultDateFrom} dateTo={defaultDateTo} />
+          <div id="daily-trend">
+            <PerNetworkAnalyticsTabsSection dateFrom={defaultDateFrom} dateTo={defaultDateTo} />
+          </div>
+
+          {/* Geo breakdown — below daily trend */}
+          <GeoBreakdownSection />
 
           {/* Sync Status Panel — live polling, circuit breaker, anomalies */}
           <SyncStatusPanel />
 
           {/* Collapsible ManualRefreshPanel */}
-          <div ref={syncRef} className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+          <div id="sync" ref={syncRef} className="border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
             <button
               onClick={() => setSyncPanelOpen(p => !p)}
               className="w-full flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-900 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors text-sm font-medium text-gray-700 dark:text-gray-300"
