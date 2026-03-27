@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { getAuth } from 'firebase/auth';
+import { useCachedNetworkData } from '@/features/caching/hooks/useNetworkCacheConfig';
 
 // ─── Shared fetcher ───────────────────────────────────────────────────────────
 
@@ -32,10 +33,11 @@ function useDebouncedValue<T>(value: T, delay = 300): T {
 }
 
 // ─── useExoClickLatest ────────────────────────────────────────────────────────
+// Uses useCachedNetworkData so SWR config is driven by per-network cache settings
 
 export function useExoClickLatest() {
   const key = `/api/networks/exoclick/stats/latest`;
-  const { data, error, isLoading, mutate } = useSWR(key, fetchWithToken);
+  const { data, error, isLoading, mutate } = useCachedNetworkData('exoclick', key, fetchWithToken);
   return { data, isLoading, error, refetch: mutate };
 }
 
