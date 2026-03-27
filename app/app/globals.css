@@ -5,17 +5,26 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --accent-color: #6366f1;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+/* Dark mode variables — applied when next-themes sets class="dark" on <html> */
+.dark {
+  --background: #0a0a0a;
+  --foreground: #ededed;
 }
 
 body {
   color: var(--foreground);
   background: var(--background);
   font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Accent color — applied via CSS custom property set by ThemeSettingsSection */
+a:not([class]) {
+  color: var(--accent-color);
+}
+
+:focus-visible {
+  outline-color: var(--accent-color);
 }
