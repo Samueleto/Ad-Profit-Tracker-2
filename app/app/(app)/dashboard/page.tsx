@@ -33,12 +33,19 @@ const TABS: { id: DashboardTab; label: string }[] = [
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
+  // Track which tabs have ever been activated — for lazy-mount (mount once, keep in DOM)
+  const [activatedTabs, setActivatedTabs] = useState<Set<DashboardTab>>(new Set(['overview']));
   const { exportModalOpen, setExportModalOpen } = useDashboardStore();
   const [syncPanelOpen, setSyncPanelOpen] = useState(false);
   const syncRef = useRef<HTMLDivElement>(null);
   const today = new Date();
   const defaultDateFrom = format(subDays(today, 29), 'yyyy-MM-dd');
   const defaultDateTo = format(today, 'yyyy-MM-dd');
+
+  const handleTabChange = (tab: DashboardTab) => {
+    setActiveTab(tab);
+    setActivatedTabs(prev => { const s = new Set(prev); s.add(tab); return s; });
+  };
 
   return (
     <div className="space-y-6">
@@ -72,7 +79,7 @@ export default function DashboardPage() {
           {TABS.map(tab => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
+              onClick={() => handleTabChange(tab.id)}
               className={`px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
                 activeTab === tab.id
                   ? 'border-blue-500 text-blue-600 dark:text-blue-400'
@@ -127,10 +134,13 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {activeTab === 'compare' && (
-        <ComparativeNetworkAnalysisTab
-          onNetworkSelect={(networkId) => setActiveTab(networkId as DashboardTab)}
-        />
+      {/* Compare — lazy-mount: renders only after first activation, stays mounted (hidden) after */}
+      {activatedTabs.has('compare') && (
+        <div className={activeTab !== 'compare' ? 'hidden' : ''}>
+          <ComparativeNetworkAnalysisTab
+            onNetworkSelect={(networkId) => handleTabChange(networkId as DashboardTab)}
+          />
+        </div>
       )}
 
       {activeTab === 'benchmarks' && (
