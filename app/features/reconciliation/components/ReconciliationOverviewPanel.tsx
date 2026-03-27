@@ -3,6 +3,12 @@
 import { useState, useEffect, useCallback } from 'react';
 import { getAuth } from 'firebase/auth';
 import { AlertCircle, CheckCircle, Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
+import { useRateLimitStatus } from '@/features/rate-limits/hooks';
+
+interface UserQuota { endpoint: string; remaining: number; resetAt: string | null; }
+function findQuota(qs: unknown[], ep: string) { return (qs as UserQuota[]).find(q => q.endpoint === ep); }
+function quotaEmpty(q: UserQuota | undefined) { return q != null && q.remaining === 0; }
+function resetTime(q: UserQuota | undefined) { return q?.resetAt ? new Date(q.resetAt).toLocaleTimeString() : 'soon'; }
 
 const NETWORKS = ['exoclick', 'rollerads', 'zeydoo', 'propush'] as const;
 type Network = typeof NETWORKS[number];
@@ -60,6 +66,9 @@ export default function ReconciliationOverviewPanel({ onAnomaliesFound }: { onAn
   const [running, setRunning] = useState<Network | 'all' | null>(null);
   const [runResults, setRunResults] = useState<Record<string, RunResult>>({});
   const [runErrors, setRunErrors] = useState<Record<string, string>>({});
+  const { userQuotas } = useRateLimitStatus();
+  const runQuota = findQuota(userQuotas, '/api/reconciliation/run');
+  const runBlocked = quotaEmpty(runQuota);
 
   const fetchStatus = useCallback(async () => {
     setLoading(true);
@@ -146,9 +155,12 @@ export default function ReconciliationOverviewPanel({ onAnomaliesFound }: { onAn
           <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
             className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg dark:bg-gray-800 dark:text-white" />
         </div>
-        <button onClick={() => handleRun('all')} disabled={running !== null}
+        <button onClick={() => handleRun('all')} disabled={running !== null || runBlocked}
+          title={runBlocked ? `Quota reached — resets at ${resetTime(runQuota)}` : undefined}
           className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 transition-colors">
-          {running === 'all' ? <><Loader2 className="w-4 h-4 animate-spin" /> Running…</> : 'Run All'}
+          {running === 'all' ? <><Loader2 className="w-4 h-4 animate-spin" /> Running…</>
+            : runBlocked ? 'Quota reached'
+            : 'Run All'}
         </button>
         <button onClick={fetchStatus} className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
           <RefreshCw className="w-4 h-4" />
@@ -195,11 +207,17 @@ export default function ReconciliationOverviewPanel({ onAnomaliesFound }: { onAn
 
             <button
               onClick={() => handleRun(net.networkId as Network)}
-              disabled={running !== null}
+              disabled={running !== null || runBlocked}
+              title={runBlocked ? `Quota reached — resets at ${resetTime(runQuota)}` : undefined}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 disabled:opacity-50 transition-colors"
             >
-              {running === net.networkId ? <><Loader2 className="w-3 h-3 animate-spin" /> Running…</> : 'Run Reconciliation'}
+              {running === net.networkId ? <><Loader2 className="w-3 h-3 animate-spin" /> Running…</>
+                : runBlocked ? 'Quota reached'
+                : 'Run Reconciliation'}
             </button>
+            {runBlocked && runQuota?.resetAt && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">Quota reached — resets at {resetTime(runQuota)}</p>
+            )}
           </div>
         ))}
       </div>

@@ -6,10 +6,11 @@ import TeamManagementPage from '@/features/team/components/TeamManagementPage';
 import NetworkConfigTab from '@/features/network-config/components/NetworkConfigTab';
 import ActivityLogTab from '@/features/audit-log/components/ActivityLogTab';
 import ThemeSettingsSection from '@/features/theming/components/ThemeSettingsSection';
+import RateLimitAdminTab from '@/features/rate-limits/components/RateLimitAdminTab';
 
-type SettingsTab = 'general' | 'team' | 'networks' | 'activity' | 'appearance';
+type SettingsTab = 'general' | 'team' | 'networks' | 'activity' | 'appearance' | 'rate-limits';
 
-const VALID_TABS: SettingsTab[] = ['general', 'team', 'networks', 'activity', 'appearance'];
+const VALID_TABS: SettingsTab[] = ['general', 'team', 'networks', 'activity', 'appearance', 'rate-limits'];
 
 function isValidTab(t: string | null): t is SettingsTab {
   return VALID_TABS.includes(t as SettingsTab);
@@ -63,6 +64,7 @@ export default function SettingsTabsClient({ children }: SettingsTabsClientProps
             { id: 'networks' as const, label: 'Networks' },
             { id: 'activity' as const, label: 'Activity Log' },
             { id: 'appearance' as const, label: 'Appearance' },
+            { id: 'rate-limits' as const, label: 'Rate Limits' },
           ]).map(tab => (
             <button
               key={tab.id}
@@ -84,6 +86,7 @@ export default function SettingsTabsClient({ children }: SettingsTabsClientProps
       {activeTab === 'networks' && <NetworkConfigTab />}
       {activeTab === 'activity' && <ActivityLogTab />}
       {activeTab === 'appearance' && <ThemeSettingsSection />}
+      {activeTab === 'rate-limits' && <RateLimitAdminTab />}
     </div>
   );
 }

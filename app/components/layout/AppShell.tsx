@@ -16,6 +16,13 @@ import {
   Scale,
 } from "lucide-react";
 import { getAuth } from "firebase/auth";
+import { useRateLimitConfig } from "@/features/rate-limits/hooks";
+
+// Pre-warm rate limit config on app load so views have data immediately
+function RateLimitConfigPreloader() {
+  useRateLimitConfig();
+  return null;
+}
 import { useAuth } from "@/contexts/AuthContext";
 import MobileNavigationDrawer from "./MobileNavigationDrawer";
 import MobileBottomNavBar from "./MobileBottomNavBar";
@@ -240,6 +247,9 @@ export default function AppShell({ children }: AppShellProps) {
 
       {/* Notification slide-over panel */}
       <NotificationCenterPanel />
+
+      {/* Pre-warm rate limit config */}
+      <RateLimitConfigPreloader />
     </div>
   );
 }

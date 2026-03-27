@@ -2,6 +2,12 @@
 
 import { useState, useCallback, useRef } from 'react';
 import { Loader2, AlertCircle, Trash2, RefreshCw, ChevronDown } from 'lucide-react';
+import { useRateLimitStatus } from '@/features/rate-limits/hooks';
+
+interface UserQuota { endpoint: string; remaining: number; resetAt: string | null; }
+function findQuota(qs: unknown[], ep: string) { return (qs as UserQuota[]).find(q => q.endpoint === ep); }
+function quotaEmpty(q: UserQuota | undefined) { return q != null && q.remaining === 0; }
+function resetTime(q: UserQuota | undefined) { return q?.resetAt ? new Date(q.resetAt).toLocaleTimeString() : 'soon'; }
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { Toast } from '@/components/ui/Toast';
 import {
@@ -161,6 +167,9 @@ export default function HistoricalDataSection() {
 
   const backfill = useBackfill();
   const deleteSnap = useDeleteSnapshot();
+  const { userQuotas } = useRateLimitStatus();
+  const backfillQuota = findQuota(userQuotas, '/api/stats/backfill');
+  const backfillBlocked = quotaEmpty(backfillQuota);
 
   // ─── Invalidation refs ──────────────────────────────────────────────────────
   // Re-mount coverage/dates by toggling a key after backfill/delete
@@ -398,13 +407,20 @@ export default function HistoricalDataSection() {
             <div className="flex items-center gap-3 pt-2 border-t border-gray-100 dark:border-gray-800">
               <button
                 onClick={handleBackfill}
-                disabled={backfill.loading}
+                disabled={backfill.loading || backfillBlocked}
+                title={backfillBlocked ? `Quota reached — resets at ${resetTime(backfillQuota)}` : undefined}
                 className="flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 transition-colors"
               >
                 {backfill.loading
                   ? <><Loader2 className="w-3 h-3 animate-spin" /> Backfilling…</>
+                  : backfillBlocked ? 'Quota reached'
                   : <><RefreshCw className="w-3 h-3" /> Re-sync / Backfill</>}
               </button>
+              {backfillBlocked && backfillQuota?.resetAt && (
+                <span className="text-xs text-amber-600 dark:text-amber-400">
+                  Quota reached — resets at {resetTime(backfillQuota)}
+                </span>
+              )}
               {backfill.error && (
                 <span className="text-xs text-red-600 dark:text-red-400 flex items-center gap-1">
                   <AlertCircle className="w-3 h-3" /> {backfill.error}

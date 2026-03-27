@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { Loader2, RefreshCw, CheckCircle, XCircle, Clock, ChevronDown } from 'lucide-react';
+import { Loader2, RefreshCw, CheckCircle, XCircle, Clock, ChevronDown, AlertTriangle } from 'lucide-react';
 import { Toast } from '@/components/ui/Toast';
 import {
   useSyncStatus,
@@ -10,6 +10,13 @@ import {
   type ScheduledNetworkStatus,
   type SyncHistoryEntry,
 } from '../hooks/useScheduledSync';
+import { useRateLimitStatus } from '@/features/rate-limits/hooks';
+
+interface UserQuota { endpoint: string; remaining: number; resetAt: string | null; }
+interface NetworkThrottle { networkId: string; isThrottled: boolean; nextReservoirRefreshAt?: string | null; }
+function findQuota(qs: unknown[], ep: string) { return (qs as UserQuota[]).find(q => q.endpoint === ep); }
+function quotaEmpty(q: UserQuota | undefined) { return q != null && q.remaining === 0; }
+function resetTime(q: UserQuota | undefined) { return q?.resetAt ? new Date(q.resetAt).toLocaleTimeString() : 'soon'; }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -69,17 +76,33 @@ interface NetworkCardProps {
   isRetrying: boolean;
   retryError: string | undefined;
   onRetry: (id: string) => void;
+  throttled?: boolean;
+  nextReservoirRefreshAt?: string | null;
+  retryBlocked?: boolean;
+  retryResetAt?: string | null;
 }
 
-function NetworkCard({ network, isRetrying, retryError, onRetry }: NetworkCardProps) {
+function NetworkCard({ network, isRetrying, retryError, onRetry, throttled, nextReservoirRefreshAt, retryBlocked, retryResetAt }: NetworkCardProps) {
   return (
     <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4 space-y-2">
       <div className="flex items-center justify-between">
-        <span className="text-sm font-medium text-gray-900 dark:text-white">
-          {NETWORK_LABELS[network.networkId] ?? network.networkId}
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-gray-900 dark:text-white">
+            {NETWORK_LABELS[network.networkId] ?? network.networkId}
+          </span>
+          {throttled && (
+            <span className="flex items-center gap-1 px-1.5 py-0.5 text-xs rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="w-3 h-3" /> Throttled
+            </span>
+          )}
+        </div>
         <StatusBadge status={network.lastSyncStatus} />
       </div>
+      {throttled && nextReservoirRefreshAt && (
+        <p className="text-xs text-amber-600 dark:text-amber-400">
+          Rate limit resets: {new Date(nextReservoirRefreshAt).toLocaleTimeString()}
+        </p>
+      )}
 
       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-500 dark:text-gray-400">
         <span>Last synced</span>
@@ -93,20 +116,28 @@ function NetworkCard({ network, isRetrying, retryError, onRetry }: NetworkCardPr
       </div>
 
       {network.lastSyncStatus === 'failed' && (
-        <div className="pt-1">
+        <div className="pt-1 space-y-1">
           <button
             onClick={() => onRetry(network.networkId)}
-            disabled={isRetrying}
+            disabled={isRetrying || retryBlocked}
+            title={retryBlocked ? `Quota reached — resets at ${retryResetAt ? new Date(retryResetAt).toLocaleTimeString() : 'soon'}` : undefined}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-red-600 hover:bg-red-700 text-white rounded-lg disabled:opacity-60 transition-colors"
           >
             {isRetrying ? (
               <><Loader2 className="w-3 h-3 animate-spin" /> Retrying…</>
+            ) : retryBlocked ? (
+              'Quota reached'
             ) : (
               <><RefreshCw className="w-3 h-3" /> Retry</>
             )}
           </button>
+          {retryBlocked && retryResetAt && (
+            <p className="text-xs text-amber-600 dark:text-amber-400">
+              Quota reached — resets at {new Date(retryResetAt).toLocaleTimeString()}
+            </p>
+          )}
           {retryError && (
-            <p className="mt-1 text-xs text-red-600 dark:text-red-400">{retryError}</p>
+            <p className="text-xs text-red-600 dark:text-red-400">{retryError}</p>
           )}
         </div>
       )}
@@ -157,6 +188,10 @@ export default function ScheduledSyncDashboard() {
   const [toast, setToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null);
 
   const { networks, isLoading, error, refresh } = useSyncStatus();
+  const { userQuotas, networks: rlNetworks } = useRateLimitStatus();
+  const retryQuota = findQuota(userQuotas, '/api/scheduled/retry-failed');
+  const retryBlocked = quotaEmpty(retryQuota);
+  const throttledMap = Object.fromEntries((rlNetworks as NetworkThrottle[]).map(n => [n.networkId, n]));
 
   const handleRetrySuccess = useCallback(() => {
     setToast({ message: 'Retry succeeded — data will update shortly.', variant: 'success' });
@@ -249,6 +284,10 @@ export default function ScheduledSyncDashboard() {
               isRetrying={isRetrying.has(n.networkId)}
               retryError={retryError[n.networkId]}
               onRetry={handleRetry}
+              throttled={throttledMap[n.networkId]?.isThrottled}
+              nextReservoirRefreshAt={throttledMap[n.networkId]?.nextReservoirRefreshAt}
+              retryBlocked={retryBlocked}
+              retryResetAt={retryQuota?.resetAt}
             />
           ))}
         </div>

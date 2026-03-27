@@ -2,7 +2,14 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { getAuth } from 'firebase/auth';
-import { AlertCircle, CheckCircle, Loader2, RefreshCw } from 'lucide-react';
+import { AlertCircle, CheckCircle, Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
+import { useRateLimitStatus } from '@/features/rate-limits/hooks';
+
+interface UserQuota { endpoint: string; remaining: number; resetAt: string | null; }
+interface NetworkThrottle { networkId: string; isThrottled: boolean; nextReservoirRefreshAt?: string | null; }
+function findQuota(qs: unknown[], ep: string) { return (qs as UserQuota[]).find(q => q.endpoint === ep); }
+function quotaEmpty(q: UserQuota | undefined) { return q != null && q.remaining === 0; }
+function resetTime(q: UserQuota | undefined) { return q?.resetAt ? new Date(q.resetAt).toLocaleTimeString() : 'soon'; }
 
 const NETWORKS = ['exoclick', 'rollerads', 'zeydoo', 'propush'] as const;
 type Network = typeof NETWORKS[number];
@@ -40,6 +47,10 @@ export default function CircuitBreakerStatusPanel({ onResetSuccess }: { onResetS
   const [error, setError] = useState(false);
   const [resetting, setResetting] = useState<Network | null>(null);
   const [resetMessages, setResetMessages] = useState<Record<string, string>>({});
+  const { userQuotas, networks: rlNetworks } = useRateLimitStatus();
+  const resetQuota = findQuota(userQuotas, '/api/errors/circuit-breaker/reset');
+  const resetBlocked = quotaEmpty(resetQuota);
+  const throttledMap = Object.fromEntries((rlNetworks as NetworkThrottle[]).map(n => [n.networkId, n]));
 
   const fetchStatus = useCallback(async () => {
     setLoading(true);
@@ -164,15 +175,30 @@ export default function CircuitBreakerStatusPanel({ onResetSuccess }: { onResetS
               </div>
             )}
 
+            {/* Throttled indicator */}
+            {throttledMap[net.networkId]?.isThrottled && (
+              <div className="flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+                <AlertTriangle className="w-3 h-3" />
+                <span>Throttled</span>
+                {throttledMap[net.networkId]?.nextReservoirRefreshAt && (
+                  <span>— resets {new Date(throttledMap[net.networkId].nextReservoirRefreshAt!).toLocaleTimeString()}</span>
+                )}
+              </div>
+            )}
+
             {net.isOpen && (
               <button
                 onClick={() => handleReset(net.networkId as Network)}
-                disabled={resetting === net.networkId}
+                disabled={resetting === net.networkId || resetBlocked}
+                title={resetBlocked ? `Quota reached — resets at ${resetTime(resetQuota)}` : undefined}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white dark:bg-gray-800 border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors"
               >
                 {resetting === net.networkId && <Loader2 className="w-3 h-3 animate-spin" />}
-                Reset Circuit
+                {resetBlocked ? 'Quota reached' : 'Reset Circuit'}
               </button>
+            )}
+            {net.isOpen && resetBlocked && resetQuota?.resetAt && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">Quota reached — resets at {resetTime(resetQuota)}</p>
             )}
 
             {resetMessages[net.networkId] && (
