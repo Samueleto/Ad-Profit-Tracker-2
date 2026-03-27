@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from 'react';
 import { getAuth } from 'firebase/auth';
 import ApiKeyCard from '@/features/settings/components/ApiKeyCard';
 import ApiKeyCardSkeleton from '@/features/settings/components/ApiKeyCardSkeleton';
+import { Toast } from '@/components/ui/Toast';
 
 interface NetworkKeyStatus {
   networkId: string;
@@ -16,6 +17,7 @@ export default function ApiKeysSectionClient() {
   const [networks, setNetworks] = useState<NetworkKeyStatus[]>([]);
   const [loading, setLoading] = useState(true);
   const [submittingId, setSubmittingId] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null);
 
   const getToken = useCallback(async (refresh = false) => {
     const auth = getAuth();
@@ -83,6 +85,9 @@ export default function ApiKeysSectionClient() {
               : n
           )
         );
+        setToast({ message: 'API key saved successfully.', variant: 'success' });
+      } else {
+        setToast({ message: 'Failed to save API key. Please try again.', variant: 'error' });
       }
     } finally {
       setSubmittingId(null);
@@ -114,6 +119,9 @@ export default function ApiKeysSectionClient() {
             : n
         )
       );
+      setToast({ message: 'Key disconnected.', variant: 'success' });
+    } else {
+      setToast({ message: 'Failed to disconnect key.', variant: 'error' });
     }
   }, [getToken]);
 
@@ -128,19 +136,28 @@ export default function ApiKeysSectionClient() {
   }
 
   return (
-    <div className="space-y-3">
-      {networks.map(network => (
-        <ApiKeyCard
-          key={network.networkId}
-          networkId={network.networkId}
-          networkName={network.networkName}
-          status={network.status}
-          updatedAt={network.updatedAt}
-          isSubmitting={submittingId === network.networkId}
-          onSave={handleSave}
-          onDisconnect={handleDisconnect}
+    <>
+      <div className="space-y-3">
+        {networks.map(network => (
+          <ApiKeyCard
+            key={network.networkId}
+            networkId={network.networkId}
+            networkName={network.networkName}
+            status={network.status}
+            updatedAt={network.updatedAt}
+            isSubmitting={submittingId === network.networkId}
+            onSave={handleSave}
+            onDisconnect={handleDisconnect}
+          />
+        ))}
+      </div>
+      {toast && (
+        <Toast
+          message={toast.message}
+          variant={toast.variant}
+          onClose={() => setToast(null)}
         />
-      ))}
-    </div>
+      )}
+    </>
   );
 }

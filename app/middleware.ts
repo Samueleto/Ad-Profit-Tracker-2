@@ -27,10 +27,13 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
   }
 
-  // If user visits a protected route without the onboarding-done cookie, redirect to /onboarding
+  // If user visits a protected route without the onboarding-done cookie,
+  // redirect to the root (login) page, preserving their intended destination via returnUrl.
   const isProtected = PROTECTED_ROUTES.some((route) => pathname.startsWith(route));
   if (isProtected && !obDone) {
-    return NextResponse.redirect(new URL(ONBOARDING_PATH, request.url));
+    const loginUrl = new URL("/", request.url);
+    loginUrl.searchParams.set("returnUrl", pathname);
+    return NextResponse.redirect(loginUrl);
   }
 
   return NextResponse.next();
