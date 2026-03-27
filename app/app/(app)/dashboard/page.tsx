@@ -13,6 +13,7 @@ import { useDateRangeStore } from '@/store/dateRangeStore';
 import { Download, ChevronDown } from 'lucide-react';
 import { Toast } from '@/components/ui/Toast';
 import ExoClickNetworkTab from '@/features/exoclick/components/ExoClickNetworkTab';
+import RollerAdsNetworkTab from '@/features/rollerads/components/RollerAdsNetworkTab';
 import ZeydooNetworkTab from '@/features/zeydoo/components/ZeydooNetworkTab';
 import FinancialMetricsSection from '@/features/dashboard/components/FinancialMetricsSection';
 import ConnectedROISection from '@/features/roi/components/ConnectedROISection';
@@ -170,11 +171,7 @@ export default function DashboardPage() {
 
       {activeTab === 'exoclick' && <ExoClickNetworkTab />}
 
-      {activeTab === 'rollerads' && (
-        <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-          RollerAds network details coming soon.
-        </div>
-      )}
+      {activeTab === 'rollerads' && <RollerAdsNetworkTab />}
 
       {activeTab === 'zeydoo' && <ZeydooNetworkTab />}
 
