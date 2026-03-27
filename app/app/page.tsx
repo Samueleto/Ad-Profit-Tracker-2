@@ -3,6 +3,7 @@
 import { useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
+import { getAuth } from "firebase/auth";
 import LoginModal from "@/components/auth/LoginModal";
 
 function RootPageInner() {
@@ -11,10 +12,33 @@ function RootPageInner() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
-    if (!loading && user) {
-      const returnUrl = searchParams.get("returnUrl");
+    if (loading || !user) return;
+    const returnUrl = searchParams.get("returnUrl");
+    // Check if the user has completed onboarding
+    const checkOnboarding = async () => {
+      try {
+        const token = await getAuth().currentUser?.getIdToken();
+        const res = await fetch("/api/auth/get-user", {
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (res.ok) {
+          const data = await res.json();
+          const completed = !!data?.user?.onboardingCompletedAt;
+          if (completed) {
+            // Mark as done in cookie so middleware lets through
+            document.cookie = "ob_done=1; path=/; max-age=31536000; SameSite=Lax";
+            router.replace(returnUrl ?? "/dashboard");
+          } else {
+            router.replace("/onboarding");
+          }
+          return;
+        }
+      } catch {
+        // On error, fall through to default redirect
+      }
       router.replace(returnUrl ?? "/dashboard");
-    }
+    };
+    checkOnboarding();
   }, [user, loading, router, searchParams]);
 
   if (loading) {

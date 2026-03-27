@@ -43,6 +43,7 @@ export default function OnboardingPage() {
   });
   const [submitting, setSubmitting] = useState(false);
   const [skipped, setSkipped] = useState(false);
+  const [navigating, setNavigating] = useState(false);
 
   useEffect(() => {
     const load = async () => {
@@ -57,6 +58,12 @@ export default function OnboardingPage() {
             timezone: data?.user?.preferences?.timezone ?? 'UTC',
             defaultDateRange: data?.user?.preferences?.defaultDateRange ?? 'last7days',
           });
+          // If user has already completed onboarding, set cookie and redirect away
+          if (data?.user?.onboardingCompletedAt) {
+            document.cookie = 'ob_done=1; path=/; max-age=31536000; SameSite=Lax';
+            router.replace('/dashboard');
+            return;
+          }
         } else {
           const name = getAuth().currentUser?.displayName ?? '';
           setDisplayName(name);
@@ -94,28 +101,41 @@ export default function OnboardingPage() {
   };
 
   const markComplete = async (skippedParam = false) => {
-    await authFetch('/api/auth/update-profile', {
+    const res = await authFetch('/api/auth/update-profile', {
       method: 'PATCH',
       body: JSON.stringify({
         onboardingCompletedAt: 'serverTimestamp',
         ...(skippedParam ? { onboardingSkipped: true } : {}),
       }),
     });
+    if (!res.ok) throw new Error('Failed to complete onboarding.');
+    // Set cookie so middleware allows through to protected routes
+    document.cookie = 'ob_done=1; path=/; max-age=31536000; SameSite=Lax';
   };
 
   const handleGoToSettings = async () => {
-    await markComplete(skipped);
-    router.push('/settings');
+    setNavigating(true);
+    try {
+      await markComplete(skipped);
+      router.push('/settings');
+    } catch {
+      setNavigating(false);
+    }
   };
 
-  const handleSkip = async () => {
+  const handleSkip = () => {
     setSkipped(true);
     setStep(4);
   };
 
   const handleGoToDashboard = async () => {
-    await markComplete(skipped);
-    router.push('/dashboard');
+    setNavigating(true);
+    try {
+      await markComplete(skipped);
+      router.replace('/dashboard');
+    } catch {
+      setNavigating(false);
+    }
   };
 
   return (
@@ -176,7 +196,7 @@ export default function OnboardingPage() {
 
         {/* Step 4 */}
         {step === 4 && (
-          <DoneStep onGoToDashboard={handleGoToDashboard} />
+          <DoneStep onGoToDashboard={handleGoToDashboard} isLoading={navigating} />
         )}
       </div>
     </div>

@@ -2,9 +2,10 @@
 
 interface DoneStepProps {
   onGoToDashboard: () => void;
+  isLoading?: boolean;
 }
 
-export default function DoneStep({ onGoToDashboard }: DoneStepProps) {
+export default function DoneStep({ onGoToDashboard, isLoading }: DoneStepProps) {
   return (
     <div className="text-center space-y-6">
       {/* Animated checkmark */}
@@ -50,9 +51,10 @@ export default function DoneStep({ onGoToDashboard }: DoneStepProps) {
 
       <button
         onClick={onGoToDashboard}
-        className="w-full py-3 px-6 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition-colors"
+        disabled={isLoading}
+        className="w-full py-3 px-6 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed text-white font-bold rounded-lg transition-colors"
       >
-        Go to Dashboard
+        {isLoading ? 'Setting up…' : 'Go to Dashboard'}
       </button>
     </div>
   );
