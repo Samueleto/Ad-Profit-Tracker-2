@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
@@ -13,7 +13,9 @@ import {
   X,
   LogOut,
   ChevronDown,
+  Scale,
 } from "lucide-react";
+import { getAuth } from "firebase/auth";
 import { useAuth } from "@/contexts/AuthContext";
 import MobileNavigationDrawer from "./MobileNavigationDrawer";
 import MobileBottomNavBar from "./MobileBottomNavBar";
@@ -28,6 +30,22 @@ const navItems = [
   { href: "/help", label: "Help", icon: HelpCircle },
 ];
 
+async function fetchReconciliationBadge(): Promise<number> {
+  try {
+    const auth = getAuth();
+    const token = await auth.currentUser?.getIdToken();
+    const res = await fetch('/api/reconciliation/status', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) return 0;
+    const data = await res.json();
+    return (data.networks ?? []).reduce(
+      (sum: number, n: { anomalyCount?: number }) => sum + (n.anomalyCount ?? 0),
+      0
+    );
+  } catch { return 0; }
+}
+
 function pathToTitle(path: string): string {
   if (path === "/dashboard") return "Dashboard";
   if (path.startsWith("/settings")) return "Settings";
@@ -35,6 +53,7 @@ function pathToTitle(path: string): string {
   if (path.startsWith("/team")) return "Team";
   if (path.startsWith("/help")) return "Help";
   if (path.startsWith("/onboarding")) return "Setup";
+  if (path.startsWith("/reconciliation")) return "Reconciliation";
   return "Ad Profit Tracker";
 }
 
@@ -47,6 +66,11 @@ export default function AppShell({ children }: AppShellProps) {
   const { user, signOut } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [reconciliationBadge, setReconciliationBadge] = useState(0);
+
+  useEffect(() => {
+    fetchReconciliationBadge().then(setReconciliationBadge);
+  }, []);
 
   return (
     <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900">
@@ -103,6 +127,29 @@ export default function AppShell({ children }: AppShellProps) {
               </Link>
             );
           })}
+          {/* Reconciliation — separate to support anomaly badge */}
+          {(() => {
+            const isActive = pathname?.startsWith("/reconciliation");
+            return (
+              <Link
+                href="/reconciliation"
+                onClick={() => setSidebarOpen(false)}
+                className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  isActive
+                    ? "bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400"
+                    : "text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700"
+                }`}
+              >
+                <Scale className="w-5 h-5 flex-shrink-0" />
+                Reconciliation
+                {reconciliationBadge > 0 && (
+                  <span className="ml-auto flex items-center justify-center min-w-[18px] h-[18px] px-1 text-xs font-medium bg-red-500 text-white rounded-full">
+                    {reconciliationBadge > 99 ? '99+' : reconciliationBadge}
+                  </span>
+                )}
+              </Link>
+            );
+          })()}
         </nav>
       </aside>
 

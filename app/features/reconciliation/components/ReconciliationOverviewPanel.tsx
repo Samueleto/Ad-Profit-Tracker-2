@@ -51,7 +51,7 @@ const HEALTH_STYLES = {
   critical: { bg: 'bg-red-100 dark:bg-red-900/30', text: 'text-red-700 dark:text-red-400', icon: AlertCircle },
 };
 
-export default function ReconciliationOverviewPanel() {
+export default function ReconciliationOverviewPanel({ onAnomaliesFound }: { onAnomaliesFound?: (count: number, networkId: string) => void }) {
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -94,6 +94,9 @@ export default function ReconciliationOverviewPanel() {
       const data = await res.json();
       setRunResults(prev => ({ ...prev, [networkId]: data }));
       fetchStatus();
+      if (data.anomaliesFound > 0) {
+        onAnomaliesFound?.(data.anomaliesFound, networkId === 'all' ? '' : networkId);
+      }
     } finally { setRunning(null); }
   };
 

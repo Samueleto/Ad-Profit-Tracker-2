@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { getAuth } from 'firebase/auth';
 import { AlertCircle, Loader2, X } from 'lucide-react';
 
@@ -37,8 +37,8 @@ async function authFetch(path: string, init: RequestInit = {}): Promise<Response
   });
 }
 
-export default function AnomalyListView() {
-  const [network, setNetwork] = useState('');
+export default function AnomalyListView({ initialNetwork = '', onAllResolved }: { initialNetwork?: string; onAllResolved?: (networkId: string) => void }) {
+  const [network, setNetwork] = useState(initialNetwork);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
   const [severity, setSeverity] = useState<typeof SEVERITY_OPTIONS[number]>('all');
@@ -55,6 +55,15 @@ export default function AnomalyListView() {
   const [resolutionType, setResolutionType] = useState<typeof RESOLUTION_TYPES[number]>('acknowledged');
   const [resolutionNote, setResolutionNote] = useState('');
   const [resolveError, setResolveError] = useState<string | null>(null);
+
+  // Sync network filter when parent deep-links with a new networkId
+  const initialNetworkRef = useRef(initialNetwork);
+  useEffect(() => {
+    if (initialNetwork !== initialNetworkRef.current) {
+      initialNetworkRef.current = initialNetwork;
+      setNetwork(initialNetwork);
+    }
+  }, [initialNetwork]);
 
   const buildQuery = (cur?: string | null) => {
     const p = new URLSearchParams();
@@ -134,7 +143,22 @@ export default function AnomalyListView() {
       setSelected(new Set());
       setShowResolveForm(false);
       setResolutionNote('');
-      fetchAnomalies();
+      // Refetch and check if all anomalies for this network are now resolved
+      setLoading(true);
+      setFetchError(false);
+      try {
+        const listRes = await authFetch(`/api/reconciliation/anomalies?${buildQuery()}`);
+        if (!listRes.ok) { setFetchError(true); return; }
+        const data = await listRes.json();
+        const updated = data.anomalies ?? [];
+        setAnomalies(updated);
+        setCursor(data.nextCursor ?? null);
+        setHasMore(data.hasMore ?? false);
+        if (updated.length === 0 && network) {
+          onAllResolved?.(network);
+        }
+      } catch { setFetchError(true); }
+      finally { setLoading(false); }
     } finally { setResolving(false); }
   };
 
