@@ -4,12 +4,6 @@ import { useState } from 'react';
 import { ChevronUp, ChevronDown, Loader2, AlertCircle } from 'lucide-react';
 import { useExoClickStatsByCountry } from '../hooks/useExoClickStats';
 
-function defaultRange() {
-  const to = new Date();
-  const from = new Date();
-  from.setDate(from.getDate() - 6);
-  return { from: from.toISOString().split('T')[0], to: to.toISOString().split('T')[0] };
-}
 
 type SortKey = 'cost' | 'costShare' | 'impressions' | 'clicks' | 'ctr';
 
@@ -33,10 +27,14 @@ const COLUMNS: { key: SortKey | 'country'; label: string }[] = [
   { key: 'ctr', label: 'CTR' },
 ];
 
-export default function ExoClickCountryBreakdownView() {
-  const init = defaultRange();
-  const [dateFrom, setDateFrom] = useState(init.from);
-  const [dateTo, setDateTo] = useState(init.to);
+interface ExoClickCountryBreakdownViewProps {
+  dateFrom: string;
+  dateTo: string;
+  onDateFromChange: (v: string) => void;
+  onDateToChange: (v: string) => void;
+}
+
+export default function ExoClickCountryBreakdownView({ dateFrom, dateTo, onDateFromChange, onDateToChange }: ExoClickCountryBreakdownViewProps) {
   const [limit, setLimit] = useState(20);
   const [sortKey, setSortKey] = useState<SortKey>('cost');
   const [sortAsc, setSortAsc] = useState(false);
@@ -61,12 +59,12 @@ export default function ExoClickCountryBreakdownView() {
       <div className="flex flex-wrap items-end gap-3">
         <div>
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">From</label>
-          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+          <input type="date" value={dateFrom} onChange={e => onDateFromChange(e.target.value)}
             className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white" />
         </div>
         <div>
           <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">To</label>
-          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+          <input type="date" value={dateTo} onChange={e => onDateToChange(e.target.value)}
             className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white" />
         </div>
         <div>

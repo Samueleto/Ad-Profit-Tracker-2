@@ -1,25 +1,19 @@
 'use client';
 
 import { useState } from 'react';
-import { BarChart, Bar, LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import { AlertCircle } from 'lucide-react';
 import { useExoClickStats } from '../hooks/useExoClickStats';
 import ExoClickStatsTable from './ExoClickStatsTable';
 
-function defaultRange() {
-  const to = new Date();
-  const from = new Date();
-  from.setDate(from.getDate() - 6);
-  return {
-    from: from.toISOString().split('T')[0],
-    to: to.toISOString().split('T')[0],
-  };
+interface ExoClickStatsViewProps {
+  dateFrom: string;
+  dateTo: string;
+  onDateFromChange: (v: string) => void;
+  onDateToChange: (v: string) => void;
 }
 
-export default function ExoClickStatsView() {
-  const init = defaultRange();
-  const [dateFrom, setDateFrom] = useState(init.from);
-  const [dateTo, setDateTo] = useState(init.to);
+export default function ExoClickStatsView({ dateFrom, dateTo, onDateFromChange, onDateToChange }: ExoClickStatsViewProps) {
   const [groupBy, setGroupBy] = useState<'day' | 'total'>('day');
   const [rangeError, setRangeError] = useState<string | null>(null);
 
@@ -32,13 +26,13 @@ export default function ExoClickStatsView() {
   );
 
   const handleDateFrom = (v: string) => {
-    setDateFrom(v);
+    onDateFromChange(v);
     const diff = Math.round((new Date(dateTo).getTime() - new Date(v).getTime()) / 86400000);
     setRangeError(diff > 90 ? 'Date range cannot exceed 90 days.' : null);
   };
 
   const handleDateTo = (v: string) => {
-    setDateTo(v);
+    onDateToChange(v);
     const diff = Math.round((new Date(v).getTime() - new Date(dateFrom).getTime()) / 86400000);
     setRangeError(diff > 90 ? 'Date range cannot exceed 90 days.' : null);
   };

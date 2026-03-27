@@ -12,7 +12,7 @@ function StatCell({ label, value }: { label: string; value: string }) {
   );
 }
 
-export default function ExoClickLatestSummary() {
+export default function ExoClickLatestSummary({ onGoToSync }: { onGoToSync?: () => void }) {
   const { data, isLoading, error, refetch } = useExoClickLatest();
 
   if (isLoading) {
@@ -37,7 +37,15 @@ export default function ExoClickLatestSummary() {
     return (
       <div className="text-center py-8">
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">No ExoClick data yet.</p>
-        <p className="text-xs text-gray-400 dark:text-gray-500">Run your first sync to see stats here.</p>
+        <p className="text-xs text-gray-400 dark:text-gray-500 mb-3">Run your first sync to see stats here.</p>
+        {onGoToSync && (
+          <button
+            onClick={onGoToSync}
+            className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+          >
+            Go to Sync tab →
+          </button>
+        )}
       </div>
     );
   }

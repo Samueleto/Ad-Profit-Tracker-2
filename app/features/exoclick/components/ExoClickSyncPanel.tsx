@@ -19,7 +19,7 @@ interface SyncResult {
   latencyMs: number;
 }
 
-export default function ExoClickSyncPanel() {
+export default function ExoClickSyncPanel({ onSyncSuccess }: { onSyncSuccess?: () => void }) {
   const [dateFrom, setDateFrom] = useState(yesterday);
   const [dateTo, setDateTo] = useState(yesterday);
   const [status, setStatus] = useState<SyncStatus>('idle');
@@ -53,6 +53,7 @@ export default function ExoClickSyncPanel() {
         latencyMs: data.latencyMs ?? 0,
       });
       setStatus('success');
+      onSyncSuccess?.();
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Sync failed');
       setStatus('error');
@@ -96,6 +97,11 @@ export default function ExoClickSyncPanel() {
       <div className="flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">
         <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
         ExoClick allows up to 10 syncs per hour. Repeated syncs for the same date range may be rate-limited.
+      </div>
+
+      <div className="flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">
+        <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+        Daily syncs run automatically every night via a scheduled job — you don't need to manually sync yesterday's data each day.
       </div>
 
       {status === 'success' && result && (
