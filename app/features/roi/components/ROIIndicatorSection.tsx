@@ -1,6 +1,6 @@
 'use client';
 
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Settings } from 'lucide-react';
 import ROIKPICard from './ROIKPICard';
 import ROIBreakdownPanel from './ROIBreakdownPanel';
 import ROINetworkContributionRow from './ROINetworkContributionRow';
@@ -20,6 +20,9 @@ interface ROIIndicatorSectionProps {
   cost?: number;
   networkContributions?: NetworkContribution[];
   onRetry?: () => void;
+  positiveThreshold?: number;
+  warningThreshold?: number;
+  onConfigureThresholds?: () => void;
 }
 
 export default function ROIIndicatorSection({
@@ -30,6 +33,9 @@ export default function ROIIndicatorSection({
   cost = 0,
   networkContributions = [],
   onRetry,
+  positiveThreshold,
+  warningThreshold,
+  onConfigureThresholds,
 }: ROIIndicatorSectionProps) {
   if (state === 'loading') {
     return <ROIKPICard roi={null} roiChange={null} isLoading />;
@@ -63,7 +69,24 @@ export default function ROIIndicatorSection({
   // success
   return (
     <div className="space-y-2">
-      <ROIKPICard roi={roi ?? null} roiChange={roiChange ?? null} />
+      <div className="relative">
+        <ROIKPICard
+          roi={roi ?? null}
+          roiChange={roiChange ?? null}
+          positiveThreshold={positiveThreshold}
+          warningThreshold={warningThreshold}
+        />
+        {onConfigureThresholds && (
+          <button
+            onClick={onConfigureThresholds}
+            className="absolute top-3 right-3 p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+            title="Configure thresholds"
+            aria-label="Configure ROI thresholds"
+          >
+            <Settings className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
 
       {networkContributions.length > 0 && (
         <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2 divide-y divide-gray-100 dark:divide-gray-800">

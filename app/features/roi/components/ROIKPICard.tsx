@@ -4,12 +4,21 @@ interface ROIKPICardProps {
   roi: number | null;
   roiChange: number | null;
   isLoading?: boolean;
+  /** User-configured threshold — roi >= this = green (default: 0) */
+  positiveThreshold?: number;
+  /** User-configured threshold — roi < this = red (default: positiveThreshold) */
+  warningThreshold?: number;
 }
 
-function roiColors(roi: number | null): { text: string; bg: string } {
+function roiColors(
+  roi: number | null,
+  positiveThreshold = 0,
+  warningThreshold = 0,
+): { text: string; bg: string } {
   if (roi === null) return { text: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/20' };
-  if (roi > 0) return { text: 'text-green-600 dark:text-green-400', bg: 'bg-green-50 dark:bg-green-900/20' };
-  if (roi < 0) return { text: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/20' };
+  if (roi >= positiveThreshold) return { text: 'text-green-600 dark:text-green-400', bg: 'bg-green-50 dark:bg-green-900/20' };
+  if (roi < warningThreshold) return { text: 'text-red-600 dark:text-red-400', bg: 'bg-red-50 dark:bg-red-900/20' };
+  // between warning and positive = amber
   return { text: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-50 dark:bg-amber-900/20' };
 }
 
@@ -18,7 +27,7 @@ function arrow(roi: number | null): string {
   return roi > 0 ? '↑' : '↓';
 }
 
-export default function ROIKPICard({ roi, roiChange, isLoading }: ROIKPICardProps) {
+export default function ROIKPICard({ roi, roiChange, isLoading, positiveThreshold, warningThreshold }: ROIKPICardProps) {
   if (isLoading) {
     return (
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-4 animate-pulse">
@@ -29,7 +38,7 @@ export default function ROIKPICard({ roi, roiChange, isLoading }: ROIKPICardProp
     );
   }
 
-  const { text, bg } = roiColors(roi);
+  const { text, bg } = roiColors(roi, positiveThreshold, warningThreshold);
   const changeLabel = roiChange != null
     ? `${roiChange > 0 ? '+' : ''}${roiChange.toFixed(1)}% vs prior period`
     : null;

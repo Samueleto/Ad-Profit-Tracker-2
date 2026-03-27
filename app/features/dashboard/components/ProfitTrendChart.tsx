@@ -1,7 +1,7 @@
 'use client';
 
 import {
-  LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer,
+  LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, ReferenceLine,
 } from 'recharts';
 import { format, parseISO } from 'date-fns';
 
@@ -55,6 +55,7 @@ export default function ProfitTrendChart({ data, isLoading }: ProfitTrendChartPr
             tickFormatter={v => `$${v}`}
           />
           <Tooltip content={<CustomTooltip />} />
+          <ReferenceLine y={0} stroke="#9CA3AF" strokeDasharray="4 4" />
           <Line
             type="monotone"
             dataKey="netProfit"
