@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { getAuth } from 'firebase/auth';
+import { differenceInDays, parseISO } from 'date-fns';
 import type { ComparisonMetric, ComparisonResponse } from '../types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -15,6 +16,8 @@ export interface UseComparativeAnalysisResult {
   loadStatus: LoadStatus;
   errorCode: number | null;
   isSyncing: boolean;
+  sessionExpired: boolean;
+  dateRangeExceeded: boolean;
   fetchComparisonData: () => Promise<void>;
   syncAllNetworks: () => Promise<void>;
 }
@@ -37,11 +40,26 @@ export function useComparativeAnalysis(
   const [loadStatus, setLoadStatus] = useState<LoadStatus>('idle');
   const [errorCode, setErrorCode] = useState<number | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [dateRangeExceeded, setDateRangeExceeded] = useState(false);
   const hasLoadedRef = useRef(false);
 
   const fetchComparisonData = useCallback(async () => {
     setLoadStatus('loading');
     setErrorCode(null);
+    setDateRangeExceeded(false);
+
+    // Client-side 90-day cap — catch before sending the request
+    try {
+      const days = differenceInDays(parseISO(dateTo), parseISO(dateFrom));
+      if (days > 90) {
+        setDateRangeExceeded(true);
+        setLoadStatus('error');
+        return;
+      }
+    } catch {
+      // Unparseable dates — let the API validate
+    }
 
     try {
       const token = await getToken();
@@ -52,10 +70,19 @@ export function useComparativeAnalysis(
 
       // 401: try token refresh once
       if (res.status === 401) {
-        const refreshedToken = await getToken(true);
+        let refreshedToken: string | null = null;
+        try {
+          refreshedToken = await getToken(true);
+        } catch {
+          setSessionExpired(true);
+          setLoadStatus('error');
+          setErrorCode(401);
+          return;
+        }
         const refreshedHeaders: Record<string, string> = refreshedToken ? { Authorization: `Bearer ${refreshedToken}` } : {};
         res = await fetch(url, { headers: refreshedHeaders, cache: 'no-store' });
         if (res.status === 401) {
+          setSessionExpired(true);
           setLoadStatus('error');
           setErrorCode(401);
           return;
@@ -97,10 +124,7 @@ export function useComparativeAnalysis(
   }, [dateFrom, dateTo, selectedMetric]);
 
   // Re-fetch when dateFrom, dateTo, or selectedMetric changes
-  // But only after first activation (lazy loading via hasLoaded)
   useEffect(() => {
-    // First render: fetch immediately (activating the tab triggers this)
-    // Subsequent changes: re-fetch
     fetchComparisonData();
   }, [fetchComparisonData]);
 
@@ -129,6 +153,8 @@ export function useComparativeAnalysis(
     loadStatus,
     errorCode,
     isSyncing,
+    sessionExpired,
+    dateRangeExceeded,
     fetchComparisonData,
     syncAllNetworks,
   };

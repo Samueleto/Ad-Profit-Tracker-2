@@ -1,6 +1,9 @@
 'use client';
 
-import { Loader2, AlertCircle, RefreshCw } from 'lucide-react';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
+import { Loader2, AlertCircle, RefreshCw, ShieldAlert } from 'lucide-react';
 import { useDateRangeStore } from '@/store/dateRangeStore';
 import type { ComparisonMetric } from '../types';
 import NetworkComparisonCard from './NetworkComparisonCard';
@@ -8,6 +11,7 @@ import ComparisonBarChart from './ComparisonBarChart';
 import EfficiencyTable from './EfficiencyTable';
 import NetworkRankingStrip from './NetworkRankingStrip';
 import { useComparativeAnalysis } from '../hooks/useComparativeAnalysis';
+import { Toast } from '@/components/ui/Toast';
 
 const NETWORK_LABELS: Record<string, string> = {
   exoclick: 'ExoClick',
@@ -31,18 +35,28 @@ interface ComparativeNetworkAnalysisTabProps {
 }
 
 export default function ComparativeNetworkAnalysisTab({ onNetworkSelect }: ComparativeNetworkAnalysisTabProps) {
+  const router = useRouter();
   const { fromDate, toDate } = useDateRangeStore();
   const {
     selectedMetric: metric,
     setSelectedMetric: setMetric,
     comparisonData: data,
     loadStatus: fetchState,
+    errorCode,
     isSyncing: syncingAll,
+    sessionExpired,
+    dateRangeExceeded,
     fetchComparisonData: fetchData,
     syncAllNetworks: handleSyncAll,
   } = useComparativeAnalysis(fromDate, toDate);
 
+  useEffect(() => {
+    if (sessionExpired) router.replace('/');
+  }, [sessionExpired, router]);
+
   return (
+    <>
+    {sessionExpired && <Toast message="Session expired. Please sign in again." variant="error" />}
     <div className="space-y-5">
       {/* Header row with MetricToggle + Sync All */}
       <div className="flex flex-wrap items-center gap-3 justify-between">
@@ -73,7 +87,20 @@ export default function ComparativeNetworkAnalysisTab({ onNetworkSelect }: Compa
       </div>
 
       {/* State rendering */}
-      {fetchState === 'error' && (
+      {fetchState === 'error' && errorCode === 403 && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-700 dark:text-red-400">
+          <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+          <span className="flex-1">Access Denied — you don&apos;t have permission to view network comparisons.</span>
+          <Link href="/dashboard" className="text-xs underline flex-shrink-0">Dashboard</Link>
+        </div>
+      )}
+      {fetchState === 'error' && dateRangeExceeded && (
+        <div className="flex items-center gap-3 px-4 py-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-xl text-sm text-amber-700 dark:text-amber-400">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          <span className="flex-1">Date range exceeds 90 days. Please select a shorter range.</span>
+        </div>
+      )}
+      {fetchState === 'error' && errorCode !== 403 && !dateRangeExceeded && (
         <div className="flex items-center gap-3 px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-700 dark:text-red-400">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
           <span className="flex-1">Something went wrong loading comparison data.</span>
@@ -176,5 +203,6 @@ export default function ComparativeNetworkAnalysisTab({ onNetworkSelect }: Compa
         </>
       )}
     </div>
+    </>
   );
 }
