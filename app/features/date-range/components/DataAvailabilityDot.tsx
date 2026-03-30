@@ -1,15 +1,25 @@
 'use client';
 
-import { useEffect } from 'react';
-import { AlertTriangle, Loader2 } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { AlertTriangle, Loader2, ShieldAlert } from 'lucide-react';
 import { useDateRangeStore } from '@/store/dateRangeStore';
 import { auth } from '@/lib/firebase/auth';
+import { Toast } from '@/components/ui/Toast';
 
 export default function DataAvailabilityDot() {
+  const router = useRouter();
   const { fromDate, toDate, dataAvailability, setDataAvailability } = useDateRangeStore();
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
+
+  useEffect(() => {
+    if (sessionExpired) router.replace('/');
+  }, [sessionExpired, router]);
 
   useEffect(() => {
     let cancelled = false;
+    setAccessDenied(false);
 
     const fetchAvailability = async (retry = false) => {
       setDataAvailability('loading');
@@ -26,10 +36,15 @@ export default function DataAvailabilityDot() {
 
         if (cancelled) return;
 
-        if (res.status === 401 && !retry) {
-          return fetchAvailability(true);
+        if (res.status === 401) {
+          if (!retry) return fetchAvailability(true);
+          // Retry also returned 401 — session truly expired
+          setSessionExpired(true);
+          setDataAvailability('error');
+          return;
         }
         if (res.status === 403) {
+          setAccessDenied(true);
           setDataAvailability('error');
           return;
         }
@@ -53,6 +68,19 @@ export default function DataAvailabilityDot() {
     const timer = setTimeout(() => fetchAvailability(), 300);
     return () => { cancelled = true; clearTimeout(timer); };
   }, [fromDate, toDate, setDataAvailability]);
+
+  if (sessionExpired) {
+    return <Toast message="Session expired. Please sign in again." variant="error" />;
+  }
+
+  if (accessDenied) {
+    return (
+      <span className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400" title="Access denied">
+        <ShieldAlert className="h-3 w-3" />
+        <span className="hidden sm:inline">Access Denied</span>
+      </span>
+    );
+  }
 
   if (dataAvailability === 'loading') {
     return (
