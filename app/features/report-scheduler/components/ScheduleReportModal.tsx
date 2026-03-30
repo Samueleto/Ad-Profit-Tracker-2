@@ -81,9 +81,11 @@ interface ScheduleReportModalProps {
   reportId: string;
   reportName: string;
   onClose: () => void;
+  onSaved?: () => void;
+  onDeleted?: () => void;
 }
 
-export default function ScheduleReportModal({ reportId, reportName, onClose }: ScheduleReportModalProps) {
+export default function ScheduleReportModal({ reportId, reportName, onClose, onSaved, onDeleted }: ScheduleReportModalProps) {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testSending, setTestSending] = useState(false);
@@ -148,6 +150,7 @@ export default function ScheduleReportModal({ reportId, reportName, onClose }: S
       if (res.ok) {
         const data = await res.json();
         if (data?.id) setExistingId(data.id);
+        onSaved?.();
         setToast('Schedule saved');
         setTimeout(() => { setToast(null); onClose(); }, 1500);
       } else {
@@ -164,7 +167,11 @@ export default function ScheduleReportModal({ reportId, reportName, onClose }: S
     if (!existingId) return;
     if (!confirm('Delete this schedule? This cannot be undone.')) return;
     const res = await authFetch(`/api/schedules/${existingId}`, { method: 'DELETE' });
-    if (res.ok) onClose();
+    if (res.ok) {
+      onDeleted?.();
+      setToast('Schedule deleted');
+      setTimeout(() => { setToast(null); onClose(); }, 1500);
+    }
   }
 
   async function handleTestSend() {
@@ -173,7 +180,7 @@ export default function ScheduleReportModal({ reportId, reportName, onClose }: S
     try {
       const res = await authFetch(`/api/schedules/${existingId}/send-now`, { method: 'POST' });
       if (res.ok) {
-        setToast('Test email sent!');
+        setToast(`Test email sent to ${schedule.email}`);
         setTimeout(() => setToast(null), 3000);
       }
     } finally {

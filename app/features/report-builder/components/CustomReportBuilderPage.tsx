@@ -106,15 +106,17 @@ interface SavedReportsSidebarProps {
   onClose: () => void;
   onLoad: (config: ReportConfig) => void;
   onToast: (msg: string) => void;
+  onSchedule: (report: SavedReport) => void;
+  scheduleRefreshKey: number;
 }
 
-function SavedReportsSidebar({ open, onClose, onLoad, onToast }: SavedReportsSidebarProps) {
+function SavedReportsSidebar({ open, onClose, onLoad, onToast, onSchedule, scheduleRefreshKey }: SavedReportsSidebarProps) {
   const [reports, setReports] = useState<SavedReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [renaming, setRenaming] = useState<string | null>(null);
   const [renameVal, setRenameVal] = useState('');
   const [deleting, setDeleting] = useState<string | null>(null);
-  const [schedulingReport, setSchedulingReport] = useState<SavedReport | null>(null);
+  const [scheduledIds, setScheduledIds] = useState<Set<string>>(new Set());
 
   const fetchReports = useCallback(async () => {
     setLoading(true);
@@ -127,8 +129,17 @@ function SavedReportsSidebar({ open, onClose, onLoad, onToast }: SavedReportsSid
   }, []);
 
   useEffect(() => {
-    if (open) fetchReports();
-  }, [open, fetchReports]);
+    if (open) {
+      fetchReports();
+      authFetch('/api/schedules')
+        .then(res => (res.ok ? res.json() : null))
+        .then(data => {
+          const schedules: { reportId: string }[] = data?.schedules ?? data ?? [];
+          setScheduledIds(new Set(schedules.map(s => s.reportId).filter(Boolean)));
+        })
+        .catch(() => {});
+    }
+  }, [open, fetchReports, scheduleRefreshKey]);
 
   async function handleRename(id: string) {
     if (!renameVal.trim()) return;
@@ -186,8 +197,8 @@ function SavedReportsSidebar({ open, onClose, onLoad, onToast }: SavedReportsSid
                   <button onClick={() => { setRenaming(r.id); setRenameVal(r.name); }} className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
                     <Edit2 className="w-3 h-3" />
                   </button>
-                  <button onClick={() => setSchedulingReport(r)} className="text-xs text-gray-500 hover:text-blue-600 dark:hover:text-blue-400" title="Schedule report">
-                    <Clock className="w-3 h-3" />
+                  <button onClick={() => onSchedule(r)} className={`text-xs transition-colors ${scheduledIds.has(r.id) ? 'text-blue-500' : 'text-gray-400 hover:text-blue-500 dark:hover:text-blue-400'}`} title="Schedule report">
+                    <Clock className={`w-3 h-3 ${scheduledIds.has(r.id) ? 'fill-current' : ''}`} />
                   </button>
                   <button onClick={() => handleDelete(r.id)} disabled={deleting === r.id} className="text-xs text-red-400 hover:text-red-500">
                     {deleting === r.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Trash2 className="w-3 h-3" />}
@@ -202,13 +213,6 @@ function SavedReportsSidebar({ open, onClose, onLoad, onToast }: SavedReportsSid
 
   return (
     <>
-      {schedulingReport && (
-        <ScheduleReportModal
-          reportId={schedulingReport.id}
-          reportName={schedulingReport.name}
-          onClose={() => setSchedulingReport(null)}
-        />
-      )}
       {/* Desktop drawer */}
       <div className={`hidden lg:flex flex-col w-64 shrink-0 border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 transition-all ${open ? 'translate-x-0' : '-translate-x-full absolute'}`}>
         {open && content}
@@ -272,6 +276,10 @@ export default function CustomReportBuilderPage() {
   const [saving, setSaving] = useState(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+
+  // Schedule modal
+  const [schedulingReport, setSchedulingReport] = useState<SavedReport | null>(null);
+  const [scheduleRefreshKey, setScheduleRefreshKey] = useState(0);
 
   // ─── Preview fetch ───────────────────────────────────────────────────────────
 
@@ -500,6 +508,8 @@ export default function CustomReportBuilderPage() {
         onClose={() => setSidebarOpen(false)}
         onLoad={loadReport}
         onToast={(msg) => { setSaveToast(msg); setTimeout(() => setSaveToast(null), 3000); }}
+        onSchedule={(r) => setSchedulingReport(r)}
+        scheduleRefreshKey={scheduleRefreshKey}
       />
 
       <div className="flex-1 min-w-0">
@@ -819,6 +829,17 @@ export default function CustomReportBuilderPage() {
 
       {/* Export modal */}
       {exportModalOpen && <ExportModal onClose={() => setExportModalOpen(false)} />}
+
+      {/* Schedule modal — mounted at page level to avoid z-index / overflow issues */}
+      {schedulingReport && (
+        <ScheduleReportModal
+          reportId={schedulingReport.id}
+          reportName={schedulingReport.name}
+          onClose={() => setSchedulingReport(null)}
+          onSaved={() => setScheduleRefreshKey(k => k + 1)}
+          onDeleted={() => setScheduleRefreshKey(k => k + 1)}
+        />
+      )}
     </div>
   );
 }
