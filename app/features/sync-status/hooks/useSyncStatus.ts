@@ -63,6 +63,8 @@ export function useSyncStatus(): UseSyncStatusResult {
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const currentIntervalRef = useRef<number>(30000);
   const abortControllerRef = useRef<AbortController | null>(null);
+  // Only fetch anomalies every 5th poll to reduce Firestore read costs
+  const pollCountRef = useRef<number>(0);
 
   const stopPolling = useCallback(() => {
     if (pollIntervalRef.current) {
@@ -93,11 +95,16 @@ export function useSyncStatus(): UseSyncStatusResult {
     const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
 
     try {
-      // Parallel fetch: live-state, activity-feed, anomalies
+      pollCountRef.current += 1;
+      const fetchAnomalies = pollCountRef.current % 5 === 1; // fetch on 1st, 6th, 11th… poll
+
+      // Parallel fetch: live-state, activity-feed, and anomalies (every 5th poll)
       const [liveRes, activityRes, anomaliesRes] = await Promise.all([
         fetch('/api/sync/live-state', { headers, signal }),
         fetch('/api/sync/activity-feed?limit=5', { headers, signal }),
-        fetch('/api/reconciliation/anomalies', { headers, signal }).catch(() => null),
+        fetchAnomalies
+          ? fetch('/api/reconciliation/anomalies', { headers, signal }).catch(() => null)
+          : Promise.resolve(null),
       ]);
 
       if (!isMountedRef.current) return null;

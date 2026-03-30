@@ -61,7 +61,7 @@ export default function SyncStatusPanel() {
   }
 
   // 403 Access Denied inline banner
-  if (error && (error as unknown as { type?: string })?.type === '403') {
+  if (error?.type === '403') {
     return (
       <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-xl text-sm text-red-700 dark:text-red-400 flex items-center gap-2">
         <AlertCircle className="w-4 h-4 flex-shrink-0" />
