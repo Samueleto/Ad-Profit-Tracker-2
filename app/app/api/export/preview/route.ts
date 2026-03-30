@@ -1,7 +1,11 @@
 import { NextResponse } from 'next/server';
+import NodeCache from 'node-cache';
 import { adminDb } from '@/lib/firebase-admin/admin';
 import { verifyAuthToken } from '@/lib/firebase-admin/verify-token';
 import { EXPORT_SHEET_KEYS } from '@/features/excel-export/types';
+
+// 5-minute TTL; key always includes uid so user A's preview is never served to user B
+const previewCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 
 export async function GET(request: Request) {
   const authResult = await verifyAuthToken(request);
@@ -13,6 +17,12 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const dateFrom = searchParams.get('dateFrom') || '';
     const dateTo = searchParams.get('dateTo') || '';
+
+    const cacheKey = `${uid}_export_preview_${dateFrom}_${dateTo}`;
+    const cached = previewCache.get(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached, { headers: { 'X-Cache': 'HIT' } });
+    }
 
     let statsQuery = adminDb.collection('adStats').where('userId', '==', uid) as FirebaseFirestore.Query;
     if (dateFrom) statsQuery = statsQuery.where('date', '>=', dateFrom);
@@ -44,14 +54,11 @@ export async function GET(request: Request) {
       activity_log: 0,
     } as Record<typeof EXPORT_SHEET_KEYS[number], number>;
 
-    return NextResponse.json({
-      dateFrom,
-      dateTo,
-      sheets,
-      totalRows,
-      hasData: totalRows > 0,
-      cachedAt: null,
-    });
+    const cachedAt = new Date().toISOString();
+    const result = { dateFrom, dateTo, sheets, totalRows, hasData: totalRows > 0, cachedAt };
+    previewCache.set(cacheKey, result);
+
+    return NextResponse.json(result, { headers: { 'X-Cache': 'MISS' } });
   } catch (error) {
     console.error('export/preview error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
