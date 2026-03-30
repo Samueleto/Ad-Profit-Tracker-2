@@ -7,6 +7,8 @@ import NotificationToggleRow, { type NotificationTypeConfig } from './Notificati
 import MasterEmailToggle from './MasterEmailToggle';
 import DeliveryEmailField from './DeliveryEmailField';
 import SendTestButton from './SendTestButton';
+import EmailLogTable from './EmailLogTable';
+import { Toast } from '@/components/ui/Toast';
 
 // ─── Notification type definitions ───────────────────────────────────────────
 
@@ -114,6 +116,12 @@ export default function EmailAlertPreferencesSection() {
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [smtpOverride, setSmtpOverride] = useState('');
 
+  // Email delivery history
+  const [historyOpen, setHistoryOpen] = useState(false);
+
+  // App-level toast
+  const [testToast, setTestToast] = useState<string | null>(null);
+
   // Load preferences on mount
   useEffect(() => {
     authFetch('/api/notifications/preferences')
@@ -201,9 +209,12 @@ export default function EmailAlertPreferencesSection() {
   async function handleSendTest() {
     setTestLoading(true);
     try {
-      await authFetch('/api/email/send-test', { method: 'POST' });
-      const now = new Date().toISOString();
-      setLastTestSentAt(now);
+      const res = await authFetch('/api/email/send-test', { method: 'POST' });
+      if (res.ok) {
+        const now = new Date().toISOString();
+        setLastTestSentAt(now);
+        setTestToast(`Test email sent to ${alertEmail}`);
+      }
     } finally {
       setTestLoading(false);
     }
@@ -316,6 +327,31 @@ export default function EmailAlertPreferencesSection() {
           </div>
         )}
       </div>
+
+      {/* Email Delivery History */}
+      <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+        <button
+          onClick={() => setHistoryOpen(o => !o)}
+          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300"
+        >
+          <ChevronDown className={`w-3.5 h-3.5 transition-transform ${historyOpen ? 'rotate-180' : ''}`} />
+          Email Delivery History
+        </button>
+        {historyOpen && (
+          <div className="mt-3">
+            <EmailLogTable />
+          </div>
+        )}
+      </div>
+
+      {/* App-level toast after test send */}
+      {testToast && (
+        <Toast
+          message={testToast}
+          variant="success"
+          onClose={() => setTestToast(null)}
+        />
+      )}
     </div>
   );
 }
