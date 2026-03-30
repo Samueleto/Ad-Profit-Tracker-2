@@ -30,7 +30,8 @@ service cloud.firestore {
 
       allow update: if isOwner(userId)
         && isImmutableField('createdAt')
-        && isImmutableField('uid');
+        && isImmutableField('uid')
+        && isImmutableField('role');
 
       allow delete: if false;
     }
