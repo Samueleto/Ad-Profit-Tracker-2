@@ -2,8 +2,23 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { getAuth } from 'firebase/auth';
-import { getAuthHeaders } from '@/lib/auth/getAuthHeaders';
 import type { WorkspaceMember } from '../types';
+
+async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const auth = getAuth();
+  let token = await auth.currentUser?.getIdToken();
+  const makeHeaders = (t: string | undefined) => ({
+    'Content-Type': 'application/json',
+    ...(init.headers as Record<string, string> ?? {}),
+    ...(t ? { Authorization: `Bearer ${t}` } : {}),
+  });
+  let res = await fetch(path, { ...init, headers: makeHeaders(token) });
+  if (res.status === 401) {
+    token = await auth.currentUser?.getIdToken(true);
+    res = await fetch(path, { ...init, headers: makeHeaders(token) });
+  }
+  return res;
+}
 
 export interface UseTeamMembersResult {
   members: WorkspaceMember[];
@@ -17,21 +32,17 @@ export function useTeamMembers(): UseTeamMembersResult {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const auth = getAuth();
-  const currentUserId = auth.currentUser?.uid ?? '';
-
   const fetchMembers = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const headers = await getAuthHeaders();
-      const res = await fetch('/api/team/members', { headers });
+      const res = await authFetch('/api/team/members');
+      if (res.status === 401) { setError('Session expired. Please sign in again.'); return; }
       if (res.status === 403) { setError('Access denied.'); return; }
       if (!res.ok) { setError('Failed to load members.'); return; }
       const data = await res.json();
       const sorted: WorkspaceMember[] = (data.members ?? []).sort(
         (a: WorkspaceMember, b: WorkspaceMember) => {
-          // Owner always first, then sort by join date
           if (a.workspaceRole === 'owner') return -1;
           if (b.workspaceRole === 'owner') return 1;
           const aTime = typeof a.workspaceJoinedAt === 'string' ? new Date(a.workspaceJoinedAt).getTime() : (a.workspaceJoinedAt as unknown as { seconds: number })?.seconds ?? 0;
@@ -45,7 +56,7 @@ export function useTeamMembers(): UseTeamMembersResult {
     } finally {
       setLoading(false);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => { fetchMembers(); }, [fetchMembers]);
 

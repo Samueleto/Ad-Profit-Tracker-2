@@ -92,7 +92,8 @@ export default function AcceptInvitationPage() {
         method: 'POST',
         body: JSON.stringify({ token }),
       });
-      router.push('/');
+      // Use replace so the invitation token is removed from browser history
+      router.replace('/');
     } finally {
       setSubmitting(false);
     }

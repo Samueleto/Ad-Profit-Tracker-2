@@ -86,11 +86,18 @@ service cloud.firestore {
 
     // ========== workspaceInvitations collection ==========
     match /workspaceInvitations/{docId} {
+      // Members of the same workspace can read invitations
       allow read: if isAuthenticated()
         && (resource.data.invitedByUid == request.auth.uid
-          || resource.data.acceptedByUid == request.auth.uid);
-      allow create: if false; // Server-side only
-      allow update: if false; // Server-side only
+          || resource.data.acceptedByUid == request.auth.uid
+          || resource.data.workspaceId in get(/databases/$(database)/documents/users/$(request.auth.uid)).data.workspaceId);
+      // Invitations are created server-side via Admin SDK (bypasses rules)
+      allow create: if false;
+      // Only the inviting user or owner can update/revoke; createdAt is immutable
+      allow update: if isAuthenticated()
+        && (resource.data.invitedByUid == request.auth.uid
+          || get(/databases/$(database)/documents/users/$(request.auth.uid)).data.workspaceRole == 'owner')
+        && isImmutableField('createdAt');
       allow delete: if false;
     }
 

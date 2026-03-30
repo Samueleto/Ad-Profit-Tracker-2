@@ -1,7 +1,23 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { getAuthHeaders } from '@/lib/auth/getAuthHeaders';
+import { getAuth } from 'firebase/auth';
+
+async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const auth = getAuth();
+  let token = await auth.currentUser?.getIdToken();
+  const makeHeaders = (t: string | undefined) => ({
+    'Content-Type': 'application/json',
+    ...(init.headers as Record<string, string> ?? {}),
+    ...(t ? { Authorization: `Bearer ${t}` } : {}),
+  });
+  let res = await fetch(path, { ...init, headers: makeHeaders(token) });
+  if (res.status === 401) {
+    token = await auth.currentUser?.getIdToken(true);
+    res = await fetch(path, { ...init, headers: makeHeaders(token) });
+  }
+  return res;
+}
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -46,8 +62,7 @@ export function useInvitationValidation(token: string | null): UseInvitationVali
 
     (async () => {
       try {
-        const headers = await getAuthHeaders();
-        const res = await fetch(`/api/team/invitations/validate?token=${encodeURIComponent(token)}`, { headers });
+        const res = await authFetch(`/api/team/invitations/validate?token=${encodeURIComponent(token)}`);
         if (res.status === 401 || res.status === 403) { setErrorType('auth'); return; }
         if (res.status === 404) { setErrorType('not_found'); return; }
         if (!res.ok) {
@@ -72,10 +87,8 @@ export function useInvitationValidation(token: string | null): UseInvitationVali
 
   const acceptInvitation = useCallback(async () => {
     if (!token) throw new Error('No token');
-    const headers = await getAuthHeaders();
-    const res = await fetch('/api/team/invitations/accept', {
+    const res = await authFetch('/api/team/invitations/accept', {
       method: 'POST',
-      headers,
       body: JSON.stringify({ token }),
     });
     if (!res.ok) {
@@ -86,10 +99,8 @@ export function useInvitationValidation(token: string | null): UseInvitationVali
 
   const declineInvitation = useCallback(async () => {
     if (!token) throw new Error('No token');
-    const headers = await getAuthHeaders();
-    const res = await fetch('/api/team/invitations/decline', {
+    const res = await authFetch('/api/team/invitations/decline', {
       method: 'POST',
-      headers,
       body: JSON.stringify({ token }),
     });
     if (!res.ok) {
