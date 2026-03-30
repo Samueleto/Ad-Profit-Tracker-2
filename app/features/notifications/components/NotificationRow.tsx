@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { RefreshCw, XCircle, Download, Clock, X } from 'lucide-react';
 import type { AppNotification } from '../types';
+import { useDashboardStore } from '@/store/dashboardStore';
 
 const BORDER_COLOR: Record<string, string> = {
   success: 'border-green-400',
@@ -45,6 +46,7 @@ interface NotificationRowProps {
 
 export default function NotificationRow({ notification, onDismiss }: NotificationRowProps) {
   const router = useRouter();
+  const setOpen = useDashboardStore(s => s.setNotificationPanelOpen);
   const [expanded, setExpanded] = useState(false);
   const [timeLabel, setTimeLabel] = useState(() => formatTime(notification.createdAt as string));
 
@@ -57,9 +59,11 @@ export default function NotificationRow({ notification, onDismiss }: Notificatio
   }, [notification.createdAt]);
 
   const handleRowClick = () => {
-    if (notification.type === 'sync_failure') {
+    if (notification.type === 'sync_failure' || notification.type === 'circuit_breaker_opened') {
+      setOpen(false);
       router.push('/dashboard#sync');
-    } else if (notification.type === 'schedule_failed') {
+    } else if (notification.type === 'schedule_failed' || notification.type === 'reconciliation_anomaly') {
+      setOpen(false);
       router.push('/reports');
     } else {
       setExpanded(v => !v);

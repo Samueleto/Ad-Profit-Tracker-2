@@ -24,6 +24,7 @@ function RateLimitConfigPreloader() {
   return null;
 }
 import { useAuth } from "@/contexts/AuthContext";
+import { useDashboardStore } from "@/store/dashboardStore";
 import MobileNavigationDrawer from "./MobileNavigationDrawer";
 import MobileBottomNavBar from "./MobileBottomNavBar";
 import BellIconTrigger from "@/features/notifications/components/BellIconTrigger";
@@ -75,9 +76,12 @@ export default function AppShell({ children }: AppShellProps) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [reconciliationBadge, setReconciliationBadge] = useState(0);
 
+  const hydrateBadgeFromFirestore = useDashboardStore(s => s.hydrateBadgeFromFirestore);
+
   useEffect(() => {
     fetchReconciliationBadge().then(setReconciliationBadge);
-  }, []);
+    hydrateBadgeFromFirestore();
+  }, [hydrateBadgeFromFirestore]);
 
   return (
     <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900">
