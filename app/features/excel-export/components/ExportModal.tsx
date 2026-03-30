@@ -212,7 +212,8 @@ export default function ExportModal({ onClose }: ExportModalProps) {
         </div>
 
         <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
-          {activeTab === 'pdf' ? (
+          {/* PDF tab — always mounted once activated so checkbox state persists on tab switch */}
+          <div className={activeTab !== 'pdf' ? 'hidden' : ''}>
             <PdfExportTab
               dateFrom={fromDate}
               dateTo={toDate}
@@ -220,7 +221,10 @@ export default function ExportModal({ onClose }: ExportModalProps) {
               previewLoading={previewLoading}
               onClose={onClose}
             />
-          ) : (
+          </div>
+
+          {/* Excel tab content */}
+          <div className={activeTab !== 'excel' ? 'hidden' : ''}>
             <>
               {/* Date range display */}
               <div className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
@@ -359,7 +363,7 @@ export default function ExportModal({ onClose }: ExportModalProps) {
                 </div>
               )}
             </>
-          )}
+          </div>
         </div>
 
         {/* Footer — only for Excel tab; PDF tab has its own action bar */}
