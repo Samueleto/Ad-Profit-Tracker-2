@@ -9,6 +9,23 @@ import {
   isValidDateRange,
 } from "@/lib/preferences";
 
+// In-memory rate limiter: max 20 PATCH requests per user per 60-second window
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT_MAX = 20;
+const RATE_LIMIT_WINDOW_MS = 60_000;
+
+function checkRateLimit(uid: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(uid);
+  if (!entry || now >= entry.resetAt) {
+    rateLimitMap.set(uid, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+    return true;
+  }
+  if (entry.count >= RATE_LIMIT_MAX) return false;
+  entry.count++;
+  return true;
+}
+
 export async function GET(request: Request) {
   const authResult = await verifyAuthToken(request);
   if ("error" in authResult) return authResult.error;
@@ -42,6 +59,13 @@ export async function PATCH(request: Request) {
 
   const { token } = authResult;
   const uid = token.uid;
+
+  if (!checkRateLimit(uid)) {
+    return NextResponse.json(
+      { error: "Too many requests. Please wait before updating preferences again." },
+      { status: 429 }
+    );
+  }
 
   try {
     const body = await request.json();
