@@ -135,28 +135,23 @@ export default function RolePermissionsEditModal({
           </button>
         </div>
 
-        {/* Role selector */}
+        {/* Role selector — admins only see member/viewer (not admin); owners see all */}
         <div className="px-5 py-3 border-b border-gray-200 dark:border-gray-700">
           <div className="inline-flex rounded-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 p-0.5 gap-0.5">
-            {EDITABLE.map(role => {
-              const disabled = currentUserRole === 'admin' && role === 'admin';
-              return (
-                <button
-                  key={role}
-                  onClick={() => !disabled && setSelectedRole(role)}
-                  disabled={disabled || saving}
-                  className={`px-4 py-1.5 text-xs font-medium rounded-full capitalize transition-colors ${
-                    selectedRole === role
-                      ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
-                      : disabled
-                      ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed'
-                      : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200'
-                  }`}
-                >
-                  {role}
-                </button>
-              );
-            })}
+            {EDITABLE.filter(role => currentUserRole !== 'admin' || role !== 'admin').map(role => (
+              <button
+                key={role}
+                onClick={() => setSelectedRole(role)}
+                disabled={saving}
+                className={`px-4 py-1.5 text-xs font-medium rounded-full capitalize transition-colors ${
+                  selectedRole === role
+                    ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm'
+                    : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-200'
+                }`}
+              >
+                {role}
+              </button>
+            ))}
           </div>
         </div>
 

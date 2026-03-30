@@ -11,6 +11,7 @@ import ExportModal from '@/features/excel-export/components/ExportModal';
 import { useDashboardStore } from '@/store/dashboardStore';
 import { useDateRangeStore } from '@/store/dateRangeStore';
 import { Download, ChevronDown } from 'lucide-react';
+import { useMyPermissions, checkPermission } from '@/features/rbac/hooks/useRbac';
 import { Toast } from '@/components/ui/Toast';
 import ExoClickNetworkTab from '@/features/exoclick/components/ExoClickNetworkTab';
 import RollerAdsNetworkTab from '@/features/rollerads/components/RollerAdsNetworkTab';
@@ -47,6 +48,9 @@ export default function DashboardPage() {
   const [activatedTabs, setActivatedTabs] = useState<Set<DashboardTab>>(new Set(['overview']));
   const { exportModalOpen, setExportModalOpen } = useDashboardStore();
   const { fromDate, toDate } = useDateRangeStore();
+  const { permissions } = useMyPermissions();
+  const canExportData = checkPermission(permissions, 'canExportData');
+  const canSyncNetworks = checkPermission(permissions, 'canSyncNetworks');
   const searchParams = useSearchParams();
   const router = useRouter();
   const welcomeWorkspace = searchParams.get('welcome');
@@ -76,13 +80,16 @@ export default function DashboardPage() {
             View your ad network profits, trends, and analytics.
           </p>
         </div>
-        <button
-          onClick={() => setExportModalOpen(true)}
-          className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-        >
-          <Download className="w-4 h-4" />
-          Export
-        </button>
+        <div title={!canExportData && permissions !== null ? "Your role doesn't include access to this feature" : undefined}>
+          <button
+            onClick={() => setExportModalOpen(true)}
+            disabled={!canExportData && permissions !== null}
+            className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Download className="w-4 h-4" />
+            Export
+          </button>
+        </div>
       </div>
 
       {/* Date range toolbar — sticky */}
@@ -120,20 +127,20 @@ export default function DashboardPage() {
       {activeTab === 'overview' && (
         <div className="space-y-6">
           <FinancialMetricsSection
-            onExport={() => setExportModalOpen(true)}
-            onSyncNow={() => {
+            onExport={canExportData || permissions === null ? () => setExportModalOpen(true) : undefined}
+            onSyncNow={canSyncNetworks || permissions === null ? () => {
               setSyncPanelOpen(true);
               setTimeout(() => syncRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-            }}
+            } : undefined}
           />
 
           <ConnectedROISection />
 
           <DailyProfitTrendSection
-            onSyncNow={() => {
+            onSyncNow={canSyncNetworks || permissions === null ? () => {
               setSyncPanelOpen(true);
               setTimeout(() => syncRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-            }}
+            } : undefined}
           />
 
           {/* Geo breakdown */}

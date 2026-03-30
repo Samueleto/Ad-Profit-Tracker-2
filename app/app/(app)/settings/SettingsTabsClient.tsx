@@ -7,6 +7,7 @@ import NetworkConfigTab from '@/features/network-config/components/NetworkConfig
 import ActivityLogTab from '@/features/audit-log/components/ActivityLogTab';
 import ThemeSettingsSection from '@/features/theming/components/ThemeSettingsSection';
 import RateLimitAdminTab from '@/features/rate-limits/components/RateLimitAdminTab';
+import { useMyPermissions, checkPermission } from '@/features/rbac/hooks/useRbac';
 
 type SettingsTab = 'general' | 'team' | 'networks' | 'activity' | 'appearance' | 'rate-limits';
 
@@ -27,6 +28,9 @@ export default function SettingsTabsClient({ children }: SettingsTabsClientProps
   const [activeTab, setActiveTab] = useState<SettingsTab>(
     isValidTab(tabParam) ? tabParam : 'general'
   );
+  const { permissions } = useMyPermissions();
+  const canViewAuditLogs = checkPermission(permissions, 'canViewAuditLogs');
+  const canManageTeam = checkPermission(permissions, 'canManageTeam');
 
   // Sync tab state when URL param changes (e.g. direct navigation to ?tab=networks)
   useEffect(() => {
@@ -59,13 +63,13 @@ export default function SettingsTabsClient({ children }: SettingsTabsClientProps
       <div className="border-b border-gray-200 dark:border-gray-700">
         <nav className="flex gap-1 -mb-px overflow-x-auto">
           {([
-            { id: 'general' as const, label: 'General' },
-            { id: 'team' as const, label: 'Team' },
-            { id: 'networks' as const, label: 'Networks' },
-            { id: 'activity' as const, label: 'Activity Log' },
-            { id: 'appearance' as const, label: 'Appearance' },
-            { id: 'rate-limits' as const, label: 'Rate Limits' },
-          ]).map(tab => (
+            { id: 'general' as const, label: 'General', allowed: true },
+            { id: 'team' as const, label: 'Team', allowed: canManageTeam },
+            { id: 'networks' as const, label: 'Networks', allowed: true },
+            { id: 'activity' as const, label: 'Activity Log', allowed: canViewAuditLogs },
+            { id: 'appearance' as const, label: 'Appearance', allowed: true },
+            { id: 'rate-limits' as const, label: 'Rate Limits', allowed: true },
+          ]).filter(tab => tab.allowed || permissions === null).map(tab => (
             <button
               key={tab.id}
               onClick={() => handleTabChange(tab.id)}
@@ -82,9 +86,9 @@ export default function SettingsTabsClient({ children }: SettingsTabsClientProps
       </div>
 
       {activeTab === 'general' && children}
-      {activeTab === 'team' && <TeamManagementPage />}
+      {activeTab === 'team' && (canManageTeam ? <TeamManagementPage /> : <p className="text-sm text-gray-500 py-8 text-center">Your role doesn&apos;t include access to this feature.</p>)}
       {activeTab === 'networks' && <NetworkConfigTab />}
-      {activeTab === 'activity' && <ActivityLogTab />}
+      {activeTab === 'activity' && (canViewAuditLogs ? <ActivityLogTab /> : <p className="text-sm text-gray-500 py-8 text-center">Your role doesn&apos;t include access to this feature.</p>)}
       {activeTab === 'appearance' && <ThemeSettingsSection />}
       {activeTab === 'rate-limits' && <RateLimitAdminTab />}
     </div>
