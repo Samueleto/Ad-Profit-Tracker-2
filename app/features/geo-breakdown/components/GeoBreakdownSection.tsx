@@ -2,7 +2,8 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search } from 'lucide-react';
+import { Search, ShieldAlert } from 'lucide-react';
+import Link from 'next/link';
 import { useDateRangeStore } from '@/store/dateRangeStore';
 import { useDashboardStore } from '@/store/dashboardStore';
 import type { GeoCountryRow, MetricToggle, TopNOption } from '../types';
@@ -38,7 +39,7 @@ const METRIC_OPTIONS: MetricToggle[] = ['Revenue', 'Cost', 'Profit'];
 export default function GeoBreakdownSection() {
   const router = useRouter();
   const { fromDate, toDate } = useDateRangeStore();
-  const { countries, loading, sessionExpired } = useGeoBreakdown(fromDate, toDate);
+  const { countries, loading, sessionExpired, accessDenied } = useGeoBreakdown(fromDate, toDate);
   const { filters } = useDashboardStore();
 
   useEffect(() => {
@@ -105,6 +106,16 @@ export default function GeoBreakdownSection() {
     { key: 'clicks', label: 'Clicks', visibility: 'secondary',
       render: row => formatNumber(row.clicks as number | null) },
   ];
+
+  if (accessDenied) {
+    return (
+      <div className="flex items-center gap-2 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-700 dark:text-red-400">
+        <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+        <span className="flex-1">Access Denied — you don&apos;t have permission to view geographic data.</span>
+        <Link href="/dashboard" className="text-xs underline flex-shrink-0">Dashboard</Link>
+      </div>
+    );
+  }
 
   return (
     <>

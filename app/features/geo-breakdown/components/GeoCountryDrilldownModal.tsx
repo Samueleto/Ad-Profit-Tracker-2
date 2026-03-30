@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { X, Loader2 } from 'lucide-react';
+import { X, Loader2, ShieldAlert } from 'lucide-react';
+import Link from 'next/link';
 import { getAuth } from 'firebase/auth';
 import { useDateRangeStore } from '@/store/dateRangeStore';
 import CountryTrendChart from './CountryTrendChart';
@@ -42,6 +43,7 @@ export default function GeoCountryDrilldownModal({
   const [chartData, setChartData] = useState<GeoSnapshotDayPoint[]>([]);
   const [networkBreakdown, setNetworkBreakdown] = useState<GeoNetworkContribution[]>([]);
   const [empty, setEmpty] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -49,6 +51,7 @@ export default function GeoCountryDrilldownModal({
       const res = await authFetch(
         `/api/stats/snapshot?country=${countryCode}&from=${fromDate}&to=${toDate}`
       );
+      if (res.status === 403) { setAccessDenied(true); return; }
       if (!res.ok) { setEmpty(true); return; }
       const data = await res.json();
       const days: GeoSnapshotDayPoint[] = data.days ?? [];
@@ -107,7 +110,15 @@ export default function GeoCountryDrilldownModal({
         </div>
 
         <div className="flex-1 overflow-y-auto p-4 space-y-5">
-          {loading ? (
+          {accessDenied ? (
+            <div className="flex flex-col items-center justify-center h-full text-center py-10 gap-3">
+              <ShieldAlert className="w-6 h-6 text-red-500" />
+              <p className="text-sm text-red-600 dark:text-red-400">
+                Access Denied — you don&apos;t have permission to view this data.
+              </p>
+              <Link href="/dashboard" className="text-xs text-blue-600 underline">Back to Dashboard</Link>
+            </div>
+          ) : loading ? (
             <>
               {/* Chart skeleton */}
               <div className="h-[200px] bg-gray-200 dark:bg-gray-700 rounded-xl animate-pulse" />

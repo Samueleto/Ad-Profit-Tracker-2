@@ -43,6 +43,7 @@ export interface UseGeoBreakdownResult {
   loading: boolean;
   error: boolean;
   sessionExpired: boolean;
+  accessDenied: boolean;
   refresh: () => void;
 }
 
@@ -51,10 +52,12 @@ export function useGeoBreakdown(fromDate: string, toDate: string): UseGeoBreakdo
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     setError(false);
+    setAccessDenied(false);
     const { fromDate: from, toDate: to } = capDateRange(fromDate, toDate);
 
     try {
@@ -85,6 +88,12 @@ export function useGeoBreakdown(fromDate: string, toDate: string): UseGeoBreakdo
           setCountries([]);
           return;
         }
+      }
+
+      if (geoRes.status === 403) {
+        setAccessDenied(true);
+        setCountries([]);
+        return;
       }
 
       if (!geoRes.ok) {
@@ -120,5 +129,5 @@ export function useGeoBreakdown(fromDate: string, toDate: string): UseGeoBreakdo
     fetchData();
   }, [fetchData]);
 
-  return { countries, loading, error, sessionExpired, refresh: fetchData };
+  return { countries, loading, error, sessionExpired, accessDenied, refresh: fetchData };
 }
