@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { verifyAuthToken } from '@/lib/firebase-admin/verify-token';
+import type { DeploymentStatusResponse } from '@/lib/deployment/types';
 
 export async function GET(request: Request) {
   const authResult = await verifyAuthToken(request);
@@ -9,15 +10,16 @@ export async function GET(request: Request) {
     const uptimeSeconds = Math.floor(process.uptime());
     const deployedAt = process.env.DEPLOY_TIMESTAMP || null;
 
-    return NextResponse.json({
-      service: process.env.SERVICE_NAME || 'ad-profit-tracker',
+    const body: DeploymentStatusResponse = {
+      service: process.env.CLOUD_RUN_SERVICE_NAME || process.env.K_SERVICE || 'ad-profit-tracker',
       revision: process.env.K_REVISION || 'local',
-      region: process.env.FUNCTION_REGION || 'us-central1',
+      region: process.env.CLOUD_RUN_REGION || 'us-central1',
       environment: process.env.NODE_ENV || 'development',
       uptimeSeconds,
       nodeVersion: process.version,
       deployedAt,
-    });
+    };
+    return NextResponse.json(body);
   } catch (error) {
     console.error('deployment/status error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
