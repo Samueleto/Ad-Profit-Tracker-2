@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { LayoutDashboard, Settings, FileText, X } from 'lucide-react';
-import { getAuth, signOut } from 'firebase/auth';
 import { useTheme } from 'next-themes';
 import { useAuth } from '@/contexts/AuthContext';
+import { Toast } from '@/components/ui/Toast';
 
 const NAV_LINKS = [
   { href: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -22,9 +22,23 @@ interface MobileNavigationDrawerProps {
 export default function MobileNavigationDrawer({ open, onClose }: MobileNavigationDrawerProps) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading, signOut } = useAuth();
   const { theme, setTheme } = useTheme();
   const touchStartX = useRef<number>(0);
+  const [signingOut, setSigningOut] = useState(false);
+  const [sessionExpiredToast, setSessionExpiredToast] = useState(false);
+
+  // Detect session expiry while drawer is open: user transitions from truthy → null
+  const hadUserRef = useRef(false);
+  useEffect(() => {
+    if (loading) return;
+    if (!user && hadUserRef.current) {
+      // Auth state changed to null — session expired
+      setSessionExpiredToast(true);
+      router.replace('/');
+    }
+    hadUserRef.current = !!user;
+  }, [user, loading, router]);
 
   // Lock body scroll when drawer is open
   useEffect(() => {
@@ -55,12 +69,16 @@ export default function MobileNavigationDrawer({ open, onClose }: MobileNavigati
     if (delta > 60) onClose(); // swipe left to dismiss
   };
 
+  // Use context signOut — it calls firebaseSignOut and onAuthStateChanged handles the redirect
   const handleSignOut = async () => {
+    if (signingOut) return;
+    setSigningOut(true);
     try {
-      await signOut(getAuth());
-      router.push('/');
+      await signOut();
     } catch {
-      // ignore
+      // ignore — onAuthStateChanged will clean up
+    } finally {
+      setSigningOut(false);
     }
   };
 
@@ -68,6 +86,14 @@ export default function MobileNavigationDrawer({ open, onClose }: MobileNavigati
 
   return (
     <div className="md:hidden">
+      {sessionExpiredToast && (
+        <Toast
+          message="Session expired. Please sign in again."
+          variant="error"
+          onClose={() => setSessionExpiredToast(false)}
+        />
+      )}
+
       {/* Backdrop */}
       {open && (
         <div
@@ -103,26 +129,28 @@ export default function MobileNavigationDrawer({ open, onClose }: MobileNavigati
           </button>
         </div>
 
-        {/* User info */}
-        <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
-          {user?.photoURL ? (
-            <img
-              src={user.photoURL}
-              alt={user.displayName ?? 'User'}
-              className="w-9 h-9 rounded-full flex-shrink-0"
-            />
-          ) : (
-            <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
-              {initials.toUpperCase()}
+        {/* User info — only render when authenticated */}
+        {user && (
+          <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 dark:border-gray-800 flex-shrink-0">
+            {user.photoURL ? (
+              <img
+                src={user.photoURL}
+                alt={user.displayName ?? 'User'}
+                className="w-9 h-9 rounded-full flex-shrink-0"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-full bg-blue-600 flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
+                {initials.toUpperCase()}
+              </div>
+            )}
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                {user.displayName ?? 'User'}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user.email}</p>
             </div>
-          )}
-          <div className="min-w-0">
-            <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-              {user?.displayName ?? 'User'}
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user?.email}</p>
           </div>
-        </div>
+        )}
 
         {/* Nav links */}
         <nav className="flex-1 px-3 py-3 space-y-0.5 overflow-y-auto">
@@ -159,9 +187,10 @@ export default function MobileNavigationDrawer({ open, onClose }: MobileNavigati
           </button>
           <button
             onClick={handleSignOut}
-            className="w-full flex items-center gap-3 px-3 py-3 min-h-[48px] rounded-lg text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+            disabled={signingOut}
+            className="w-full flex items-center gap-3 px-3 py-3 min-h-[48px] rounded-lg text-sm font-medium text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 disabled:opacity-50 transition-colors"
           >
-            Sign Out
+            {signingOut ? 'Signing out…' : 'Sign Out'}
           </button>
         </div>
       </aside>
