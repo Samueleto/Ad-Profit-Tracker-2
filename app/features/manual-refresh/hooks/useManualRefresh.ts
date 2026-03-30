@@ -33,9 +33,18 @@ interface SyncHistoryEvent {
 
 const TERMINAL_STATUSES: SyncStatus[] = ['success', 'failed', 'never'];
 
-async function getToken(): Promise<string | null> {
+// Strip anything resembling an API key or token (long alphanumeric strings 20+ chars)
+const SENSITIVE_PATTERN = /[A-Za-z0-9_\-]{20,}/g;
+
+function sanitizeErrorMessage(msg: string | null): string | null {
+  if (!msg) return null;
+  const truncated = msg.length > 200 ? msg.slice(0, 200) + '…' : msg;
+  return truncated.replace(SENSITIVE_PATTERN, '[redacted]');
+}
+
+async function getToken(forceRefresh = false): Promise<string | null> {
   const auth = getAuth();
-  return auth.currentUser?.getIdToken() ?? null;
+  return auth.currentUser?.getIdToken(forceRefresh) ?? null;
 }
 
 async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
@@ -67,6 +76,7 @@ export function useManualRefresh() {
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [triggeredNetworks, setTriggeredNetworks] = useState<Set<NetworkId>>(new Set());
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   // Rate limits: per-network and "all"
   const [networkRateLimits, setNetworkRateLimits] = useState<Partial<Record<NetworkId, RateLimitState>>>({});
@@ -99,7 +109,37 @@ export function useManualRefresh() {
     }
   }, [sessionExpired, router]);
 
-  const checkSessionExpiry = useCallback((status: number) => {
+  /**
+   * Handle 401: try a silent force-refresh first.
+   * If the refresh gives us a new token, retry the original request.
+   * If refresh fails, mark session expired (triggers redirect).
+   * Returns the retried Response on success, null if session truly expired.
+   */
+  const retryAfter401 = useCallback(async (
+    path: string,
+    init: RequestInit = {}
+  ): Promise<Response | null> => {
+    try {
+      const newToken = await getToken(true); // force refresh
+      if (!newToken) { setSessionExpired(true); return null; }
+      const retried = await fetch(path, {
+        ...init,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(init.headers as Record<string, string> ?? {}),
+          Authorization: `Bearer ${newToken}`,
+        },
+      });
+      if (retried.status === 401) { setSessionExpired(true); return null; }
+      return retried;
+    } catch {
+      setSessionExpired(true);
+      return null;
+    }
+  }, []);
+
+  const handleResponseStatus = useCallback((status: number) => {
+    if (status === 403) setAccessDenied(true);
     if (status === 401) setSessionExpired(true);
   }, []);
 
@@ -107,11 +147,16 @@ export function useManualRefresh() {
 
   const fetchStatus = useCallback(async () => {
     try {
-      const res = await authFetch('/api/scheduled/sync-status');
-      if (!res.ok) {
-        checkSessionExpiry(res.status);
-        return;
+      let res = await authFetch('/api/scheduled/sync-status');
+
+      if (res.status === 401) {
+        const retried = await retryAfter401('/api/scheduled/sync-status');
+        if (!retried) return;
+        res = retried;
       }
+
+      if (!res.ok) { handleResponseStatus(res.status); return; }
+
       const data = await res.json();
       const statuses: Array<{
         networkId: NetworkId;
@@ -127,7 +172,7 @@ export function useManualRefresh() {
           ...n,
           lastSyncedAt: found.lastSyncedAt ? new Date(found.lastSyncedAt) : null,
           lastSyncStatus: found.lastSyncStatus,
-          lastSyncError: found.lastSyncError ?? null,
+          lastSyncError: sanitizeErrorMessage(found.lastSyncError ?? null),
         };
       }));
 
@@ -146,7 +191,7 @@ export function useManualRefresh() {
     } catch {
       // Silently ignore polling errors
     }
-  }, []);
+  }, [retryAfter401, handleResponseStatus]);
 
   // ─── Initial load ──────────────────────────────────────────────────────────
 
@@ -247,14 +292,22 @@ export function useManualRefresh() {
     const alreadyRunning = Array.from(triggeredNetworks);
     if (alreadyRunning.length === SUPPORTED_NETWORKS.length) return;
 
-    const res = await authFetch('/api/sync/manual', { method: 'POST', body: JSON.stringify({}) });
+    const path = '/api/sync/manual';
+    const init: RequestInit = { method: 'POST', body: JSON.stringify({}) };
+    let res = await authFetch(path, init);
+
+    if (res.status === 401) {
+      const retried = await retryAfter401(path, init);
+      if (!retried) return;
+      res = retried;
+    }
 
     if (res.status === 429) {
       const retryAfter = parseInt(res.headers.get('Retry-After') ?? '60', 10);
       startAllRateLimitCountdown(isNaN(retryAfter) ? 60 : retryAfter);
       return;
     }
-    if (!res.ok) { checkSessionExpiry(res.status); return; }
+    if (!res.ok) { handleResponseStatus(res.status); return; }
 
     setNetworkStates(prev => prev.map(n => ({
       ...n,
@@ -262,23 +315,28 @@ export function useManualRefresh() {
       lastSyncError: null,
     })));
     setTriggeredNetworks(new Set(SUPPORTED_NETWORKS as unknown as NetworkId[]));
-  }, [allRateLimit, triggeredNetworks]);
+  }, [allRateLimit, triggeredNetworks, retryAfter401, handleResponseStatus]);
 
   const triggerNetwork = useCallback(async (networkId: NetworkId) => {
     if (networkRateLimits[networkId]) return;
     if (triggeredNetworks.has(networkId)) return;
 
-    const res = await authFetch('/api/sync/manual', {
-      method: 'POST',
-      body: JSON.stringify({ networkId }),
-    });
+    const path = '/api/sync/manual';
+    const init: RequestInit = { method: 'POST', body: JSON.stringify({ networkId }) };
+    let res = await authFetch(path, init);
+
+    if (res.status === 401) {
+      const retried = await retryAfter401(path, init);
+      if (!retried) return;
+      res = retried;
+    }
 
     if (res.status === 429) {
       const retryAfter = parseInt(res.headers.get('Retry-After') ?? '60', 10);
       startNetworkRateLimitCountdown(networkId, isNaN(retryAfter) ? 60 : retryAfter);
       return;
     }
-    if (!res.ok) { checkSessionExpiry(res.status); return; }
+    if (!res.ok) { handleResponseStatus(res.status); return; }
 
     setNetworkStates(prev => prev.map(n =>
       n.networkId === networkId
@@ -286,7 +344,7 @@ export function useManualRefresh() {
         : n
     ));
     setTriggeredNetworks(prev => new Set([...prev, networkId]));
-  }, [networkRateLimits, triggeredNetworks]);
+  }, [networkRateLimits, triggeredNetworks, retryAfter401, handleResponseStatus]);
 
   // ─── History ───────────────────────────────────────────────────────────────
 
@@ -294,13 +352,19 @@ export function useManualRefresh() {
     setHistoryOpen(true);
     setHistoryLoading(true);
     try {
-      const res = await authFetch('/api/scheduled/sync-history');
-      const data = res.ok ? await res.json() : null;
+      let res = await authFetch('/api/scheduled/sync-history');
+      if (res.status === 401) {
+        const retried = await retryAfter401('/api/scheduled/sync-history');
+        if (!retried) { setHistoryLoading(false); return; }
+        res = retried;
+      }
+      if (!res.ok) { handleResponseStatus(res.status); return; }
+      const data = await res.json();
       setHistoryData(data?.history ?? data?.events ?? []);
     } finally {
       setHistoryLoading(false);
     }
-  }, []);
+  }, [retryAfter401, handleResponseStatus]);
 
   const closeHistory = useCallback(() => {
     setHistoryOpen(false);
@@ -322,5 +386,6 @@ export function useManualRefresh() {
     openHistory,
     closeHistory,
     sessionExpired,
+    accessDenied,
   };
 }

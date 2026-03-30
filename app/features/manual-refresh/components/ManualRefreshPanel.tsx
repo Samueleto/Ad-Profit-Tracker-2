@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Loader2, RefreshCw } from 'lucide-react';
+import { Loader2, RefreshCw, ShieldAlert } from 'lucide-react';
 import { SUPPORTED_NETWORKS } from '@/lib/constants';
 import NetworkSyncRow from './NetworkSyncRow';
 import SyncHistoryDrawer from './SyncHistoryDrawer';
@@ -22,6 +22,7 @@ export default function ManualRefreshPanel() {
     openHistory,
     closeHistory,
     sessionExpired,
+    accessDenied,
   } = useManualRefresh();
 
   const [confirmingAll, setConfirmingAll] = useState(false);
@@ -51,6 +52,13 @@ export default function ManualRefreshPanel() {
   return (
     <>
     {sessionExpired && <Toast message="Session expired. Please sign in again." variant="error" />}
+    {accessDenied && (
+      <div className="flex items-center gap-2 p-3 mb-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-700 dark:text-red-400">
+        <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+        <span className="flex-1">Access Denied — you don&apos;t have permission to sync networks.</span>
+        <Link href="/dashboard" className="text-xs underline flex-shrink-0">Go to Dashboard</Link>
+      </div>
+    )}
     <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-4">
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-gray-900 dark:text-white">Data Sync</h3>
