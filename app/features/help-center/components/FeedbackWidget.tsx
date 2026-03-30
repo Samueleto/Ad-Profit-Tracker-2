@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { ThumbsUp, ThumbsDown, Loader2 } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
+import { Toast } from '@/components/ui/Toast';
 
 interface FeedbackWidgetProps {
   articleId: string;
@@ -12,6 +13,7 @@ type FeedbackState = 'idle' | 'submitting' | 'submitted' | 'already_rated' | 'er
 
 export default function FeedbackWidget({ articleId }: FeedbackWidgetProps) {
   const [state, setState] = useState<FeedbackState>('idle');
+  const [showToast, setShowToast] = useState(false);
 
   const submit = async (rating: 'helpful' | 'not_helpful') => {
     setState('submitting');
@@ -29,6 +31,7 @@ export default function FeedbackWidget({ articleId }: FeedbackWidgetProps) {
       if (res.status === 429) { setState('already_rated'); return; }
       if (!res.ok) { setState('error'); return; }
       setState('submitted');
+      setShowToast(true);
     } catch {
       setState('error');
     }
@@ -68,6 +71,13 @@ export default function FeedbackWidget({ articleId }: FeedbackWidgetProps) {
             No
           </button>
         </div>
+      )}
+      {showToast && (
+        <Toast
+          message="Thanks for your feedback!"
+          variant="success"
+          onClose={() => setShowToast(false)}
+        />
       )}
     </div>
   );

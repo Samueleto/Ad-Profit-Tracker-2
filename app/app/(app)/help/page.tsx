@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Search, Mail, X, AlertCircle } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
 import CategoryCard from '@/features/help-center/components/CategoryCard';
@@ -28,11 +29,18 @@ async function authFetch(path: string): Promise<Response> {
 }
 
 export default function HelpCenterPage() {
+  const searchParams = useSearchParams();
+  const categoryParam = searchParams.get('category') as HelpCategory | null;
+
   const [loading, setLoading] = useState(true);
   const [fetchError, setFetchError] = useState(false);
   const [articles, setArticles] = useState<HelpArticleListItem[]>([]);
   const [categoryGroups, setCategoryGroups] = useState<CategoryGroup[]>([]);
-  const [selectedCategory, setSelectedCategory] = useState<HelpCategory | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<HelpCategory | null>(
+    categoryParam && (HELP_CATEGORIES as readonly { category: string }[]).some(c => c.category === categoryParam)
+      ? categoryParam
+      : null
+  );
 
   const [query, setQuery] = useState('');
   const [searchResults, setSearchResults] = useState<HelpSearchResult[]>([]);

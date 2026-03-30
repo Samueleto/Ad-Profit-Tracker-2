@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, use } from 'react';
+import { useRouter } from 'next/navigation';
 import { ArrowLeft, Copy, Check, AlertCircle, Clock, User } from 'lucide-react';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
@@ -10,6 +11,7 @@ import TableOfContents from '@/features/help-center/components/TableOfContents';
 import FeedbackWidget from '@/features/help-center/components/FeedbackWidget';
 import ArticleShimmer from '@/features/help-center/components/ArticleShimmer';
 import ArticleRow from '@/features/help-center/components/ArticleRow';
+import { Toast } from '@/components/ui/Toast';
 import type { HelpArticle, HelpArticleListItem, HelpCategory } from '@/features/help-center/types';
 
 const CATEGORY_COLORS: Record<HelpCategory, string> = {
@@ -59,16 +61,23 @@ type LoadState = 'loading' | 'success' | 'error_403' | 'error_404' | 'error_500'
 
 export default function HelpArticlePage({ params }: HelpArticlePageProps) {
   const { articleId } = use(params);
+  const router = useRouter();
 
   const [loadState, setLoadState] = useState<LoadState>('loading');
   const [article, setArticle] = useState<HelpArticle | null>(null);
   const [relatedArticles, setRelatedArticles] = useState<HelpArticleListItem[]>([]);
   const [copied, setCopied] = useState(false);
+  const [copyToast, setCopyToast] = useState(false);
 
   const loadArticle = async () => {
     setLoadState('loading');
     try {
       const res = await authFetch(`/api/help/articles/${articleId}`);
+      if (res.status === 401) {
+        // Session expired — brief redirect to login
+        router.push('/');
+        return;
+      }
       if (res.status === 403) { setLoadState('error_403'); return; }
       if (res.status === 404) { setLoadState('error_404'); return; }
       if (!res.ok) { setLoadState('error_500'); return; }
@@ -100,6 +109,7 @@ export default function HelpArticlePage({ params }: HelpArticlePageProps) {
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href).then(() => {
       setCopied(true);
+      setCopyToast(true);
       setTimeout(() => setCopied(false), 2000);
     }).catch(() => {});
   };
@@ -256,6 +266,14 @@ export default function HelpArticlePage({ params }: HelpArticlePageProps) {
           )}
         </div>
       ) : null}
+
+      {copyToast && (
+        <Toast
+          message="Link copied to clipboard"
+          variant="success"
+          onClose={() => setCopyToast(false)}
+        />
+      )}
     </div>
   );
 }

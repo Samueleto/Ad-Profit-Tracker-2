@@ -1,7 +1,7 @@
 'use client';
 
 import { usePathname, useRouter } from 'next/navigation';
-import { LayoutDashboard, Activity, Settings, FileText } from 'lucide-react';
+import { LayoutDashboard, Activity, Settings, FileText, HelpCircle } from 'lucide-react';
 import { useDashboardStore } from '@/store/dashboardStore';
 
 const TABS = [
@@ -9,6 +9,7 @@ const TABS = [
   { id: 'networks', href: '/dashboard#networks', label: 'Networks', icon: Activity },
   { id: 'settings', href: '/settings', label: 'Settings', icon: Settings },
   { id: 'reports', href: '/reports', label: 'Reports', icon: FileText },
+  { id: 'help', href: '/help', label: 'Help', icon: HelpCircle },
 ] as const;
 
 export default function MobileBottomNavBar() {
