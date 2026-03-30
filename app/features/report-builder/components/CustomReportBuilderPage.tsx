@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { format, subDays, startOfMonth, differenceInDays } from 'date-fns';
 import { getAuth } from 'firebase/auth';
 import { DayPicker } from 'react-day-picker';
@@ -13,6 +14,7 @@ import {
 import MobileDataTableWrapper, { type TableColumn } from '@/features/mobile/components/MobileDataTableWrapper';
 import ExportModal from '@/features/excel-export/components/ExportModal';
 import { useDashboardStore } from '@/store/dashboardStore';
+import { useDateRangeStore } from '@/store/dateRangeStore';
 import ScheduleReportModal from '@/features/report-scheduler/components/ScheduleReportModal';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -103,9 +105,10 @@ interface SavedReportsSidebarProps {
   open: boolean;
   onClose: () => void;
   onLoad: (config: ReportConfig) => void;
+  onToast: (msg: string) => void;
 }
 
-function SavedReportsSidebar({ open, onClose, onLoad }: SavedReportsSidebarProps) {
+function SavedReportsSidebar({ open, onClose, onLoad, onToast }: SavedReportsSidebarProps) {
   const [reports, setReports] = useState<SavedReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -129,16 +132,22 @@ function SavedReportsSidebar({ open, onClose, onLoad }: SavedReportsSidebarProps
 
   async function handleRename(id: string) {
     if (!renameVal.trim()) return;
-    await authFetch(`/api/reports/${id}`, { method: 'PATCH', body: JSON.stringify({ name: renameVal }) });
+    const res = await authFetch(`/api/reports/${id}`, { method: 'PATCH', body: JSON.stringify({ name: renameVal }) });
     setRenaming(null);
+    if (res.ok) {
+      onToast('Report renamed');
+    }
     fetchReports();
   }
 
   async function handleDelete(id: string) {
     if (!confirm('Delete this saved report?')) return;
     setDeleting(id);
-    await authFetch(`/api/reports/${id}`, { method: 'DELETE' });
+    const res = await authFetch(`/api/reports/${id}`, { method: 'DELETE' });
     setDeleting(null);
+    if (res.ok) {
+      onToast('Report deleted');
+    }
     fetchReports();
   }
 
@@ -221,6 +230,9 @@ function SavedReportsSidebar({ open, onClose, onLoad }: SavedReportsSidebarProps
 
 export default function CustomReportBuilderPage() {
   const { setExportModalOpen, exportModalOpen } = useDashboardStore();
+  const { setCustomRange: syncExportDateRange, applyCustomRange } = useDateRangeStore();
+  const router = useRouter();
+  const searchParams = useSearchParams();
 
   const today = new Date();
   const [config, setConfig] = useState<ReportConfig>({
@@ -259,6 +271,7 @@ export default function CustomReportBuilderPage() {
   const [saveName, setSaveName] = useState('');
   const [saving, setSaving] = useState(false);
   const [saveToast, setSaveToast] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   // ─── Preview fetch ───────────────────────────────────────────────────────────
 
@@ -305,6 +318,21 @@ export default function CustomReportBuilderPage() {
     }, 300);
     return () => { if (previewDebounce.current) clearTimeout(previewDebounce.current); };
   }, [config, dateRangeError, fetchPreview, fetchSectionCounts]);
+
+  // Deep-link: auto-load saved report if ?reportId= is in the URL
+  useEffect(() => {
+    const reportId = searchParams.get('reportId');
+    if (!reportId) return;
+    authFetch('/api/reports')
+      .then(res => (res.ok ? res.json() : null))
+      .then(data => {
+        const reports: SavedReport[] = data?.reports ?? data ?? [];
+        const match = reports.find(r => r.id === reportId);
+        if (match) loadReport(match.config);
+      })
+      .catch(() => {});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ─── Config helpers ──────────────────────────────────────────────────────────
 
@@ -356,6 +384,14 @@ export default function CustomReportBuilderPage() {
     setDateRangeError('');
   }
 
+  // ─── Export ───────────────────────────────────────────────────────────────────
+
+  function handleOpenExport() {
+    syncExportDateRange(config.dateFrom, config.dateTo);
+    applyCustomRange();
+    setExportModalOpen(true);
+  }
+
   // ─── Run report ──────────────────────────────────────────────────────────────
 
   async function handleRunReport() {
@@ -367,13 +403,18 @@ export default function CustomReportBuilderPage() {
         method: 'POST',
         body: JSON.stringify({ ...config, limit: 100 }),
       });
-      if (!res.ok) { setRunError('Failed to run report.'); return; }
+      if (res.status === 401) {
+        setSaveToast('Session expired. Please sign in again.');
+        setTimeout(() => router.push('/'), 1500);
+        return;
+      }
+      if (!res.ok) { setRunError('Failed to run report. Please try again.'); return; }
       const data = await res.json();
       setPreviewRows(data?.rows ?? []);
       setNextCursor(data?.nextCursor ?? null);
       setPreviewStatus(data?.rows?.length === 0 ? 'empty' : 'success');
     } catch {
-      setRunError('Failed to run report.');
+      setRunError('Failed to run report. Please try again.');
     } finally {
       setRunning(false);
     }
@@ -402,16 +443,24 @@ export default function CustomReportBuilderPage() {
   async function handleSave() {
     if (!saveName.trim()) return;
     setSaving(true);
+    setSaveError(null);
     try {
       const res = await authFetch('/api/reports/save', {
         method: 'POST',
         body: JSON.stringify({ name: saveName, config }),
       });
+      if (res.status === 401) {
+        setSaveToast('Session expired. Please sign in again.');
+        setTimeout(() => router.push('/'), 1500);
+        return;
+      }
       if (res.ok) {
-        setSaveToast('Report saved');
+        setSaveToast('Report saved successfully');
         setTimeout(() => setSaveToast(null), 3000);
         setSaveOpen(false);
         setSaveName('');
+      } else {
+        setSaveError('Failed to save report. Please try again.');
       }
     } finally {
       setSaving(false);
@@ -450,6 +499,7 @@ export default function CustomReportBuilderPage() {
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onLoad={loadReport}
+        onToast={(msg) => { setSaveToast(msg); setTimeout(() => setSaveToast(null), 3000); }}
       />
 
       <div className="flex-1 min-w-0">
@@ -643,7 +693,7 @@ export default function CustomReportBuilderPage() {
                 Save Report
               </button>
               <button
-                onClick={() => setExportModalOpen(true)}
+                onClick={handleOpenExport}
                 disabled={!previewLoaded}
                 className="px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors"
               >
@@ -671,8 +721,13 @@ export default function CustomReportBuilderPage() {
                     {saving && <Loader2 className="w-3 h-3 animate-spin" />}
                     Save
                   </button>
-                  <button onClick={() => setSaveOpen(false)} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">Cancel</button>
+                  <button onClick={() => { setSaveOpen(false); setSaveError(null); }} className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">Cancel</button>
                 </div>
+                {saveError && (
+                  <p className="text-xs text-red-500 dark:text-red-400 flex items-center gap-1">
+                    <AlertTriangle className="w-3 h-3" /> {saveError}
+                  </p>
+                )}
               </div>
             )}
 
