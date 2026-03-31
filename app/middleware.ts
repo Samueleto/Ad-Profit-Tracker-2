@@ -37,9 +37,14 @@ export function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
-  // If user visits a protected route without the onboarding-done cookie,
-  // redirect to the root (login) page, preserving their intended destination via returnUrl.
+  // Protected routes require both an active Firebase session and completed onboarding.
+  // Redirect to / (sign-in page) if either is absent.
   const isProtected = PROTECTED_ROUTES.some((route) => pathname.startsWith(route));
+  if (isProtected && !hasSession) {
+    const loginUrl = new URL("/", request.url);
+    loginUrl.searchParams.set("returnUrl", pathname);
+    return NextResponse.redirect(loginUrl);
+  }
   if (isProtected && !obDone) {
     const loginUrl = new URL("/", request.url);
     loginUrl.searchParams.set("returnUrl", pathname);

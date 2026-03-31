@@ -72,18 +72,28 @@ interface SavedReport {
 }
 
 // ─── Auth fetch ───────────────────────────────────────────────────────────────
+// Tries with cached token first; retries once with a force-refreshed token on
+// 401 so short-lived token expiry is handled transparently.
 
 async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
-  return fetch(path, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init.headers as Record<string, string> ?? {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
+  const buildReq = (token?: string) =>
+    fetch(path, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(init.headers as Record<string, string> ?? {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+  let token = await auth.currentUser?.getIdToken(false);
+  let res = await buildReq(token);
+  if (res.status === 401) {
+    // Force-refresh and retry once — handles near-expired tokens
+    token = await auth.currentUser?.getIdToken(true);
+    res = await buildReq(token);
+  }
+  return res;
 }
 
 function presetToRange(preset: DatePreset): { from: string; to: string } {
@@ -277,6 +287,10 @@ export default function CustomReportBuilderPage() {
   const [saveToast, setSaveToast] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
+  // Inline config validation errors (shown near the relevant control)
+  const [metricsError, setMetricsError] = useState<string | null>(null);
+  const [networksError, setNetworksError] = useState<string | null>(null);
+
   // Schedule modal
   const [schedulingReport, setSchedulingReport] = useState<SavedReport | null>(null);
   const [scheduleRefreshKey, setScheduleRefreshKey] = useState(0);
@@ -403,6 +417,12 @@ export default function CustomReportBuilderPage() {
   // ─── Run report ──────────────────────────────────────────────────────────────
 
   async function handleRunReport() {
+    // Validate config client-side — show inline errors before any API call
+    let hasValidationError = false;
+    if (config.metrics.length === 0) { setMetricsError('Select at least one metric.'); hasValidationError = true; } else setMetricsError(null);
+    if (config.networks.length === 0) { setNetworksError('Select at least one network.'); hasValidationError = true; } else setNetworksError(null);
+    if (hasValidationError) return;
+
     setRunning(true);
     setRunError(null);
     setNextCursor(null);
@@ -449,7 +469,11 @@ export default function CustomReportBuilderPage() {
   // ─── Save report ─────────────────────────────────────────────────────────────
 
   async function handleSave() {
-    if (!saveName.trim()) return;
+    const trimmed = saveName.trim();
+    if (!trimmed) return;
+    if (trimmed.length > 100) { setSaveError('Report name must be 100 characters or fewer.'); return; }
+    if (config.metrics.length === 0) { setSaveError('Select at least one metric before saving.'); return; }
+    if (config.networks.length === 0) { setSaveError('Select at least one network before saving.'); return; }
     setSaving(true);
     setSaveError(null);
     try {
@@ -556,13 +580,18 @@ export default function CustomReportBuilderPage() {
                     <input
                       type="checkbox"
                       checked={config.metrics.includes(m)}
-                      onChange={() => toggleMetric(m)}
+                      onChange={() => { toggleMetric(m); setMetricsError(null); }}
                       className="rounded border-gray-300 text-blue-600"
                     />
                     {METRIC_LABELS[m]}
                   </label>
                 ))}
               </div>
+              {metricsError && (
+                <p className="mt-2 text-xs text-red-500 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" /> {metricsError}
+                </p>
+              )}
             </div>
 
             {/* 2. Date Range */}
@@ -625,13 +654,18 @@ export default function CustomReportBuilderPage() {
                     <input
                       type="checkbox"
                       checked={config.networks.includes(n)}
-                      onChange={() => toggleNetwork(n)}
+                      onChange={() => { toggleNetwork(n); setNetworksError(null); }}
                       className="rounded border-gray-300 text-blue-600"
                     />
                     {NETWORK_LABELS[n]}
                   </label>
                 ))}
               </div>
+              {networksError && (
+                <p className="mt-2 text-xs text-red-500 flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3" /> {networksError}
+                </p>
+              )}
             </div>
 
             {/* 4. Grouping */}
@@ -689,7 +723,7 @@ export default function CustomReportBuilderPage() {
             <div className="flex gap-2 flex-wrap">
               <button
                 onClick={handleRunReport}
-                disabled={running || !rangeOk || config.metrics.length === 0}
+                disabled={running || !rangeOk || config.metrics.length === 0 || config.networks.length === 0}
                 className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
               >
                 {running && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
@@ -715,17 +749,23 @@ export default function CustomReportBuilderPage() {
             {saveOpen && (
               <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-4 space-y-2">
                 <label className="text-xs font-medium text-gray-700 dark:text-gray-300">Report name</label>
-                <input
-                  type="text"
-                  value={saveName}
-                  onChange={e => setSaveName(e.target.value)}
-                  placeholder="My Custom Report"
-                  className="w-full text-sm px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                />
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={saveName}
+                    onChange={e => setSaveName(e.target.value.slice(0, 100))}
+                    placeholder="My Custom Report"
+                    maxLength={100}
+                    className="w-full text-sm px-3 py-1.5 pr-16 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                  />
+                  <span className={`absolute right-2 top-1/2 -translate-y-1/2 text-xs ${saveName.length >= 100 ? 'text-red-500' : 'text-gray-400'}`}>
+                    {saveName.length}/100
+                  </span>
+                </div>
                 <div className="flex gap-2">
                   <button
                     onClick={handleSave}
-                    disabled={saving || !saveName.trim()}
+                    disabled={saving || !saveName.trim() || saveName.length > 100}
                     className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60"
                   >
                     {saving && <Loader2 className="w-3 h-3 animate-spin" />}
