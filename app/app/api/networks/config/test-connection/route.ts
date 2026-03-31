@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin/admin";
 import { verifyAuthToken } from "@/lib/firebase-admin/verify-token";
 import { decrypt } from "@/lib/encryption";
@@ -33,9 +34,11 @@ export async function POST(request: Request) {
   const uid = authResult.token.uid;
 
   if (!checkTestRateLimit(uid)) {
+    const entry = testRateLimit.get(uid);
+    const retryAfter = entry ? Math.ceil((entry.resetAt - Date.now()) / 1000) : 3600;
     return NextResponse.json(
       { error: "Rate limit exceeded. Maximum 10 connection tests per hour." },
-      { status: 429 }
+      { status: 429, headers: { "Retry-After": String(retryAfter) } }
     );
   }
 
@@ -61,15 +64,30 @@ export async function POST(request: Request) {
     const decryptedKey = decrypt(keyDoc.data()!.encryptedKey);
     const testUrl = NETWORK_TEST_URLS[networkId];
 
+    let connected = false;
     try {
       await axios.get(testUrl, {
         headers: { Authorization: `Bearer ${decryptedKey}` },
         timeout: 10000,
       });
-      return NextResponse.json({ success: true, networkId, status: "connected" });
+      connected = true;
     } catch {
-      return NextResponse.json({ success: false, networkId, status: "failed", error: "Connection test failed" });
+      connected = false;
     }
+
+    // Audit log — fire-and-forget, never includes the decrypted key
+    adminDb.collection("auditLogs").add({
+      userId: uid,
+      action: "connection_test",
+      networkId,
+      metadata: { status: connected ? "connected" : "failed" },
+      createdAt: FieldValue.serverTimestamp(),
+    }).catch((err: Error) => console.error("Audit log write failed:", err));
+
+    if (connected) {
+      return NextResponse.json({ success: true, networkId, status: "connected" });
+    }
+    return NextResponse.json({ success: false, networkId, status: "failed", error: "Connection test failed" });
   } catch (error) {
     console.error("POST /api/networks/config/test-connection error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
