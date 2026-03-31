@@ -1,14 +1,16 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer,
   CartesianGrid, ReferenceLine,
 } from 'recharts';
 import { format, differenceInDays } from 'date-fns';
-import { ChevronDown, AlertCircle } from 'lucide-react';
+import { ChevronDown, AlertCircle, ShieldAlert } from 'lucide-react';
 import { useDateRangeStore } from '@/store/dateRangeStore';
+import { Toast } from '@/components/ui/Toast';
 
 type Metric = 'netProfit' | 'revenue' | 'cost' | 'roi';
 type Preset = '7d' | '14d' | '30d' | 'month' | 'custom';
@@ -31,12 +33,36 @@ interface SnapshotData {
   roi: number;
 }
 
-async function authFetch(path: string): Promise<Response> {
+// Fetch fresh token each call — Firebase SDK manages caching/refresh internally.
+// Throws if no authenticated user.
+async function getAuthHeaders(): Promise<{ Authorization: string }> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
-  return fetch(path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!auth.currentUser) throw new Error('Not authenticated');
+  const token = await auth.currentUser.getIdToken();
+  return { Authorization: `Bearer ${token}` };
 }
 
+// Fetch with one automatic token force-refresh on 401.
+// Returns { res, sessionExpired: true } when the retry also fails with 401.
+async function authFetch(
+  path: string,
+  init?: RequestInit
+): Promise<{ res: Response; sessionExpired: boolean }> {
+  const headers = await getAuthHeaders();
+  const res = await fetch(path, { ...init, headers: { ...init?.headers, ...headers } });
+
+  if (res.status !== 401) return { res, sessionExpired: false };
+
+  // Force-refresh and retry exactly once
+  const auth = getAuth();
+  if (!auth.currentUser) return { res, sessionExpired: true };
+  const freshToken = await auth.currentUser.getIdToken(true);
+  const retryRes = await fetch(path, {
+    ...init,
+    headers: { ...init?.headers, Authorization: `Bearer ${freshToken}` },
+  });
+  return { res: retryRes, sessionExpired: retryRes.status === 401 };
+}
 
 function computeMovingAvg(data: DayPoint[], field: Metric, window = 7): DayPoint[] {
   return data.map((pt, i) => {
@@ -75,19 +101,29 @@ function computeInsights(data: DayPoint[]): {
 interface SnapshotPanelProps {
   date: string;
   onClose: () => void;
+  onSessionExpired: () => void;
 }
 
-function SnapshotPanel({ date, onClose }: SnapshotPanelProps) {
+function SnapshotPanel({ date, onClose, onSessionExpired }: SnapshotPanelProps) {
   const [snap, setSnap] = useState<SnapshotData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [accessDenied, setAccessDenied] = useState(false);
 
   useEffect(() => {
-    authFetch(`/api/stats/snapshot?date=${date}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => setSnap(d))
+    let cancelled = false;
+    setAccessDenied(false);
+    authFetch(`/api/stats/snapshot?date=${encodeURIComponent(date)}`)
+      .then(({ res, sessionExpired }) => {
+        if (cancelled) return;
+        if (sessionExpired) { onSessionExpired(); return; }
+        if (res.status === 403) { setAccessDenied(true); return; }
+        if (!res.ok) return;
+        return res.json().then(d => { if (!cancelled) setSnap(d); });
+      })
       .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [date]);
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [date, onSessionExpired]);
 
   return (
     <div className="bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-xl p-4 mt-3">
@@ -97,6 +133,11 @@ function SnapshotPanel({ date, onClose }: SnapshotPanelProps) {
       </div>
       {loading ? (
         <div className="animate-pulse h-12 bg-gray-200 dark:bg-gray-700 rounded" />
+      ) : accessDenied ? (
+        <div className="flex items-center gap-2 text-xs text-red-500">
+          <ShieldAlert className="w-3.5 h-3.5" /> Access Denied.
+          <a href="/dashboard" className="underline">Go to Dashboard</a>
+        </div>
       ) : snap ? (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
           {[
@@ -135,27 +176,34 @@ const STORE_TO_PRESET: Record<string, Preset> = {
   'custom': 'custom',
 };
 
+const MAX_RANGE_DAYS = 90;
+
 interface DailyProfitTrendSectionProps {
   onSyncNow?: () => void;
 }
 
 export default function DailyProfitTrendSection({ onSyncNow }: DailyProfitTrendSectionProps) {
+  const router = useRouter();
   const { fromDate: storeFrom, toDate: storeTo, preset: storePreset, setPreset: storeSetPreset, setCustomRange, applyCustomRange } = useDateRangeStore();
 
   const [metric, setMetric] = useState<Metric>('netProfit');
-  // Derive local preset from store preset
   const preset: Preset = STORE_TO_PRESET[storePreset] ?? '30d';
   const [customFrom, setCustomFrom] = useState('');
   const [customTo, setCustomTo] = useState('');
-  const [rangeError, setRangeError] = useState<string | null>(null);
+  const [rangeNotice, setRangeNotice] = useState<string | null>(null);
   const [series, setSeries] = useState<DayPoint[]>([]);
   const [loading, setLoading] = useState(true);
-  const [errorType, setErrorType] = useState<'none' | '404' | '500' | '403' | '401'>('none');
+  const [errorType, setErrorType] = useState<'none' | '404' | '500' | '403'>('none');
+  const [sessionExpired, setSessionExpired] = useState(false);
   const [snapshotDate, setSnapshotDate] = useState<string | null>(null);
   const [insightsOpen, setInsightsOpen] = useState(false);
   const chartRef = useRef<HTMLDivElement>(null);
 
-  // When store preset is custom, seed custom inputs from store dates
+  // Redirect on session expiry
+  useEffect(() => {
+    if (sessionExpired) router.replace('/');
+  }, [sessionExpired, router]);
+
   useEffect(() => {
     if (storePreset === 'custom' && storeFrom && storeTo) {
       setCustomFrom(storeFrom);
@@ -171,44 +219,62 @@ export default function DailyProfitTrendSection({ onSyncNow }: DailyProfitTrendS
     }
   };
 
+  // Clamp date range to 90 days, show notice if clamped
   const handleCustomFrom = (v: string) => {
     setCustomFrom(v);
-    setRangeError(customTo && differenceInDays(new Date(customTo), new Date(v)) > 90 ? 'Max 90 days.' : null);
+    if (customTo && differenceInDays(new Date(customTo), new Date(v)) > MAX_RANGE_DAYS) {
+      setRangeNotice(`Date range capped at ${MAX_RANGE_DAYS} days.`);
+    } else {
+      setRangeNotice(null);
+    }
     setCustomRange(v, customTo);
   };
 
   const handleCustomTo = (v: string) => {
-    setCustomTo(v);
-    setRangeError(customFrom && differenceInDays(new Date(v), new Date(customFrom)) > 90 ? 'Max 90 days.' : null);
-    setCustomRange(customFrom, v);
-    if (customFrom && v && differenceInDays(new Date(v), new Date(customFrom)) <= 90) {
-      applyCustomRange();
+    let effectiveTo = v;
+    let notice: string | null = null;
+    if (customFrom && differenceInDays(new Date(v), new Date(customFrom)) > MAX_RANGE_DAYS) {
+      // Clamp: set dateTo = dateFrom + 90 days
+      const clamped = new Date(new Date(customFrom).getTime() + MAX_RANGE_DAYS * 86400000);
+      effectiveTo = clamped.toISOString().split('T')[0];
+      notice = `Date range capped at ${MAX_RANGE_DAYS} days.`;
     }
+    setCustomTo(effectiveTo);
+    setRangeNotice(notice);
+    setCustomRange(customFrom, effectiveTo);
+    if (customFrom && effectiveTo) applyCustomRange();
   };
+
+  const handleSessionExpired = useCallback(() => {
+    setSessionExpired(true);
+  }, []);
 
   const fetchData = useCallback(async () => {
     if (!storeFrom || !storeTo) return;
-    const range = { from: storeFrom, to: storeTo };
+
+    // Enforce 90-day cap before making any API call
+    const diff = differenceInDays(new Date(storeTo), new Date(storeFrom));
+    const effectiveFrom = storeFrom;
+    const effectiveTo = diff > MAX_RANGE_DAYS
+      ? new Date(new Date(storeFrom).getTime() + MAX_RANGE_DAYS * 86400000).toISOString().split('T')[0]
+      : storeTo;
+
+    if (diff > MAX_RANGE_DAYS) {
+      setRangeNotice(`Date range capped at ${MAX_RANGE_DAYS} days.`);
+    }
+
     setLoading(true);
     setErrorType('none');
-    try {
-      const params = new URLSearchParams({ groupBy: 'daily', dateFrom: range.from, dateTo: range.to });
-      const [roiRes, breakdownRes] = await Promise.all([
-        authFetch(`/api/roi/compute?${params}`),
-        authFetch(`/api/roi/breakdown?dimension=daily&dateFrom=${range.from}&dateTo=${range.to}`),
-      ]);
 
-      if (roiRes.status === 401) {
-        // Try token refresh
-        const auth = getAuth();
-        try {
-          await auth.currentUser?.getIdToken(true);
-          fetchData();
-        } catch {
-          window.location.href = '/?toast=session_expired';
-        }
-        return;
-      }
+    try {
+      const params = new URLSearchParams({ groupBy: 'daily', dateFrom: effectiveFrom, dateTo: effectiveTo });
+      const [{ res: roiRes, sessionExpired: roiExpired }, { res: breakdownRes, sessionExpired: bdExpired }] =
+        await Promise.all([
+          authFetch(`/api/roi/compute?${params}`),
+          authFetch(`/api/roi/breakdown?dimension=daily&dateFrom=${effectiveFrom}&dateTo=${effectiveTo}`),
+        ]);
+
+      if (roiExpired || bdExpired) { handleSessionExpired(); return; }
       if (roiRes.status === 403) { setErrorType('403'); return; }
       if (roiRes.status === 404) { setErrorType('404'); return; }
       if (!roiRes.ok) { setErrorType('500'); return; }
@@ -217,23 +283,28 @@ export default function DailyProfitTrendSection({ onSyncNow }: DailyProfitTrendS
       const breakdownData = breakdownRes.ok ? await breakdownRes.json() : { rows: [] };
 
       const breakdownMap: Record<string, { colorCode?: string }> = {};
-      for (const row of (breakdownData.rows ?? breakdownData.days ?? [])) {
+      for (const row of (breakdownData.rows ?? breakdownData.days ?? breakdownData.breakdown ?? [])) {
         breakdownMap[row.date] = row;
       }
 
-      const raw: DayPoint[] = (roiData.rows ?? roiData.data ?? roiData.series ?? []).map((d: { date: string; netProfit?: number; revenue?: number; cost?: number; roi?: number }) => ({
-        date: d.date,
-        netProfit: d.netProfit ?? null,
-        revenue: d.revenue ?? null,
-        cost: d.cost ?? null,
-        roi: d.roi ?? null,
-        colorCode: (breakdownMap[d.date]?.colorCode ?? 'amber') as 'green' | 'red' | 'amber',
-      }));
+      const raw: DayPoint[] = (roiData.rows ?? roiData.data ?? roiData.series ?? roiData.breakdown ?? []).map(
+        (d: { date: string; netProfit?: number; revenue?: number; cost?: number; roi?: number }) => ({
+          date: d.date,
+          netProfit: d.netProfit ?? null,
+          revenue: d.revenue ?? null,
+          cost: d.cost ?? null,
+          roi: d.roi ?? null,
+          colorCode: (breakdownMap[d.date]?.colorCode ?? 'amber') as 'green' | 'red' | 'amber',
+        })
+      );
 
       setSeries(computeMovingAvg(raw, 'netProfit'));
-    } catch { setErrorType('500'); }
-    finally { setLoading(false); }
-  }, [storeFrom, storeTo]);
+    } catch {
+      setErrorType('500');
+    } finally {
+      setLoading(false);
+    }
+  }, [storeFrom, storeTo, handleSessionExpired]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -260,6 +331,10 @@ export default function DailyProfitTrendSection({ onSyncNow }: DailyProfitTrendS
     { id: 'cost', label: 'Cost' },
     { id: 'roi', label: 'ROI' },
   ];
+
+  if (sessionExpired) {
+    return <Toast message="Session expired. Please sign in again." variant="error" />;
+  }
 
   return (
     <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-5">
@@ -300,7 +375,7 @@ export default function DailyProfitTrendSection({ onSyncNow }: DailyProfitTrendS
                 className="px-2 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-800 dark:text-white" />
             </div>
           )}
-          {rangeError && <span className="text-xs text-red-500">{rangeError}</span>}
+          {rangeNotice && <span className="text-xs text-amber-500">{rangeNotice}</span>}
           <button onClick={exportChart}
             className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 rounded hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
             Export
@@ -315,8 +390,9 @@ export default function DailyProfitTrendSection({ onSyncNow }: DailyProfitTrendS
 
       {/* Error states */}
       {!loading && errorType === '403' && (
-        <div className="flex items-center gap-2 text-sm text-red-500 p-4">
-          <AlertCircle className="w-4 h-4" /> Access Denied.
+        <div className="flex items-center gap-2 text-sm text-red-500 p-4 bg-red-50 dark:bg-red-900/10 rounded-lg">
+          <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+          <span>Access Denied.</span>
           <a href="/dashboard" className="underline text-xs">Go to Dashboard</a>
         </div>
       )}
@@ -385,15 +461,19 @@ export default function DailyProfitTrendSection({ onSyncNow }: DailyProfitTrendS
                   label={{ value: 'Break Even', position: 'insideRight', fontSize: 9, fill: '#9ca3af' }} />
                 <Area type="monotone" dataKey={metric} stroke={areaStroke} fill="url(#areaFill)"
                   connectNulls={false} strokeWidth={2} dot={false} />
-                {/* 7-day moving average */}
                 <Area type="monotone" dataKey="movingAvg" stroke="#9ca3af" fill="none"
                   strokeDasharray="3 3" strokeWidth={1} dot={false} connectNulls name="7-day avg" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
 
-          {/* Snapshot drill-down */}
-          {snapshotDate && <SnapshotPanel date={snapshotDate} onClose={() => setSnapshotDate(null)} />}
+          {snapshotDate && (
+            <SnapshotPanel
+              date={snapshotDate}
+              onClose={() => setSnapshotDate(null)}
+              onSessionExpired={handleSessionExpired}
+            />
+          )}
 
           {/* Pattern Insights */}
           <div className="mt-4 border-t border-gray-100 dark:border-gray-800 pt-3">
