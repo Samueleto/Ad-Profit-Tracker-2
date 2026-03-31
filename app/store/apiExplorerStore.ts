@@ -1,7 +1,7 @@
 'use client';
 
 import { create } from 'zustand';
-import { getAuth } from 'firebase/auth';
+import { authFetch, stripSensitiveFields } from '@/lib/api/auth-fetch';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -39,13 +39,6 @@ interface ApiExplorerStore {
   setConfigured: (network: NetworkId, value: boolean) => void;
 }
 
-async function getAuthHeaders(): Promise<Record<string, string>> {
-  const token = await getAuth().currentUser?.getIdToken();
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return headers;
-}
-
 export const useApiExplorerStore = create<ApiExplorerStore>((set, get) => ({
   networks: Object.fromEntries(NETWORK_IDS.map(id => [id, defaultNetworkState()])) as Record<NetworkId, NetworkExplorerState>,
 
@@ -55,10 +48,12 @@ export const useApiExplorerStore = create<ApiExplorerStore>((set, get) => ({
 
     set(s => ({ networks: { ...s.networks, [network]: { ...s.networks[network], isLoadingCached: true, error: null } } }));
     try {
-      const headers = await getAuthHeaders();
-      const res = await fetch(RAW_RESPONSE_ENDPOINTS[network], { headers });
+      const res = await authFetch(RAW_RESPONSE_ENDPOINTS[network]);
+      if (res === null) return; // session expired, redirect triggered
       if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-      const data = await res.json();
+      const raw = await res.json();
+      // Strip sensitive fields before storing in client state
+      const data = stripSensitiveFields(raw);
       set(s => ({
         networks: {
           ...s.networks,
@@ -78,14 +73,15 @@ export const useApiExplorerStore = create<ApiExplorerStore>((set, get) => ({
   fetchFreshSample: async (network: NetworkId) => {
     set(s => ({ networks: { ...s.networks, [network]: { ...s.networks[network], isFetchingFresh: true, error: null } } }));
     try {
-      const headers = await getAuthHeaders();
-      const res = await fetch('/api/networks/config/test-connection', {
+      const res = await authFetch('/api/networks/config/test-connection', {
         method: 'POST',
-        headers,
         body: JSON.stringify({ networkId: network }),
       });
+      if (res === null) return; // session expired, redirect triggered
       if (!res.ok) throw new Error(`Request failed: ${res.status}`);
-      const data = await res.json();
+      const raw = await res.json();
+      // Strip sensitive fields before storing in client state
+      const data = stripSensitiveFields(raw);
       set(s => ({
         networks: {
           ...s.networks,

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getAuth } from 'firebase/auth';
+import { authFetch, clampDateRange, VALID_NETWORK_IDS } from '@/lib/api/auth-fetch';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,19 +28,11 @@ function initialCache(): Record<NetworkId, NetworkData> {
   return Object.fromEntries(NETWORKS.map(id => [id, emptyNetworkData()])) as Record<NetworkId, NetworkData>;
 }
 
-// ─── Auth ─────────────────────────────────────────────────────────────────────
+// ─── Typed auth fetch helper ──────────────────────────────────────────────────
 
-async function fetchWithAuth<T>(path: string, forceRefresh = false): Promise<T> {
-  const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken(forceRefresh);
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  if (token) headers.Authorization = `Bearer ${token}`;
-  let res = await fetch(path, { headers });
-  if (res.status === 401 && !forceRefresh) {
-    const freshToken = await auth.currentUser?.getIdToken(true);
-    const retryHeaders = { ...headers, ...(freshToken ? { Authorization: `Bearer ${freshToken}` } : {}) };
-    res = await fetch(path, { headers: retryHeaders });
-  }
+async function fetchWithAuth<T>(path: string): Promise<T> {
+  const res = await authFetch(path);
+  if (res === null) throw new Error('Session expired');
   if (!res.ok) {
     const err = new Error(`Request failed: ${res.status}`);
     (err as Error & { status: number }).status = res.status;
@@ -65,7 +57,16 @@ export function useNetworkAnalytics(dateFrom: string, dateTo: string): UseNetwor
   const dateRangeKey = `${dateFrom}|${dateTo}`;
 
   const loadNetwork = useCallback(async (networkId: NetworkId, df: string, dt: string) => {
-    const key = `${df}|${dt}`;
+    // Validate networkId before making any API call
+    if (!VALID_NETWORK_IDS.has(networkId)) {
+      console.error(`Invalid networkId: ${networkId}`);
+      return;
+    }
+
+    // Clamp date range to 90 days client-side (server enforces the real boundary)
+    const { dateFrom: clampedFrom, dateTo: clampedTo } = clampDateRange(df, dt);
+    const key = `${clampedFrom}|${clampedTo}`;
+
     if (loadingRef.current.has(networkId)) return;
     loadingRef.current.add(networkId);
 
@@ -75,7 +76,7 @@ export function useNetworkAnalytics(dateFrom: string, dateTo: string): UseNetwor
     }));
 
     try {
-      const baseParams = new URLSearchParams({ networkId, dateFrom: df, dateTo: dt });
+      const baseParams = new URLSearchParams({ networkId, dateFrom: clampedFrom, dateTo: clampedTo });
       const [totalData, dailyData, countryData] = await Promise.all([
         fetchWithAuth(`/api/networks/stats?${new URLSearchParams({ ...Object.fromEntries(baseParams), groupBy: 'total' })}`),
         fetchWithAuth(`/api/networks/stats?${new URLSearchParams({ ...Object.fromEntries(baseParams), groupBy: 'daily' })}`),
@@ -142,7 +143,13 @@ export function useNetworkAnalytics(dateFrom: string, dateTo: string): UseNetwor
   }, []);
 
   const syncNetwork = useCallback(async (networkId: NetworkId) => {
-    await fetchWithAuth('/api/sync/manual', false);
+    // Validate networkId before calling sync endpoint
+    if (!VALID_NETWORK_IDS.has(networkId)) {
+      console.error(`Invalid networkId: ${networkId}`);
+      return;
+    }
+    const res = await authFetch(`/api/networks/${networkId}/sync`, { method: 'POST' });
+    if (res === null) return; // session expired, redirect already triggered
     // Invalidate and re-fetch
     setCache(prev => ({ ...prev, [networkId]: { ...prev[networkId], loadedForDateRange: null } }));
     await loadNetwork(networkId, dateFrom, dateTo);
