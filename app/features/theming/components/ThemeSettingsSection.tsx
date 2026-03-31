@@ -1,13 +1,17 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { getAuth } from 'firebase/auth';
-import { Sun, Moon, Monitor, Check, Loader2 } from 'lucide-react';
+import { Sun, Moon, Monitor, Check, Loader2, ShieldAlert } from 'lucide-react';
+import { Toast } from '@/components/ui/Toast';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type ThemeMode = 'light' | 'dark' | 'system';
+
+const VALID_THEME_MODES = new Set<string>(['light', 'dark', 'system']);
 
 const ACCENT_PRESETS: { name: string; hex: string }[] = [
   { name: 'indigo',   hex: '#6366f1' },
@@ -25,27 +29,46 @@ const DEFAULT_ACCENT = '#6366f1';
 
 // ─── Auth fetch ───────────────────────────────────────────────────────────────
 
-async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
+// Fetches fresh token each call. Retries once with force-refresh on 401.
+// Returns { res, sessionExpired: true } if retry also returns 401.
+async function authFetch(
+  path: string,
+  init: RequestInit = {}
+): Promise<{ res: Response; sessionExpired: boolean }> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
-  return fetch(path, {
+  if (!auth.currentUser) return { res: new Response(null, { status: 401 }), sessionExpired: true };
+
+  const token = await auth.currentUser.getIdToken();
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(init.headers as Record<string, string> ?? {}),
+    Authorization: `Bearer ${token}`,
+  };
+  const res = await fetch(path, { ...init, headers });
+
+  if (res.status !== 401) return { res, sessionExpired: false };
+
+  // Force-refresh and retry exactly once
+  const freshToken = await auth.currentUser.getIdToken(true).catch(() => null);
+  if (!freshToken) return { res, sessionExpired: true };
+
+  const retryRes = await fetch(path, {
     ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init.headers as Record<string, string> ?? {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+    headers: { ...headers, Authorization: `Bearer ${freshToken}` },
   });
+  return { res: retryRes, sessionExpired: retryRes.status === 401 };
 }
 
 // ─── Hex validation ───────────────────────────────────────────────────────────
 
+// Allow #RGB (3-char) or #RRGGBB (6-char) only — no CSS injection possible
+const HEX_RE = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/;
+
 function isValidHex(hex: string): boolean {
-  return /^#[0-9a-fA-F]{6}$/.test(hex);
+  return HEX_RE.test(hex);
 }
 
 function sanitizeHex(hex: string): string {
-  // Only allow valid hex color strings to prevent CSS injection
   return isValidHex(hex) ? hex : DEFAULT_ACCENT;
 }
 
@@ -83,17 +106,26 @@ function LivePreview({ accent, dark }: { accent: string; dark: boolean }) {
 // ─── Main section ─────────────────────────────────────────────────────────────
 
 export default function ThemeSettingsSection() {
+  const router = useRouter();
   const { setTheme } = useTheme();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
+  const [savedToast, setSavedToast] = useState(false);
+  const [sessionExpired, setSessionExpired] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [notFound, setNotFound] = useState(false);
   const [themeMode, setThemeMode] = useState<ThemeMode>(DEFAULT_THEME);
   const [accentColor, setAccentColor] = useState(DEFAULT_ACCENT);
   const [showCustom, setShowCustom] = useState(false);
   const [customHex, setCustomHex] = useState('');
   const [customError, setCustomError] = useState('');
 
-  // Apply accent CSS var immediately
+  // Redirect on session expiry
+  useEffect(() => {
+    if (sessionExpired) router.replace('/');
+  }, [sessionExpired, router]);
+
+  // Apply accent CSS custom property — only safe hex values reach here via sanitizeHex
   useEffect(() => {
     const safe = sanitizeHex(accentColor);
     document.documentElement.style.setProperty('--accent-color', safe);
@@ -107,34 +139,47 @@ export default function ThemeSettingsSection() {
   // Load saved preferences
   useEffect(() => {
     authFetch('/api/settings/preferences')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
-        if (data) {
-          if (data.themePreference) setThemeMode(data.themePreference as ThemeMode);
-          if (data.accentColor) setAccentColor(data.accentColor);
-        }
+      .then(({ res, sessionExpired: expired }) => {
+        if (expired) { setSessionExpired(true); return; }
+        if (res.status === 403) { setAccessDenied(true); return; }
+        if (res.status === 404) { setNotFound(true); return; }
+        if (!res.ok) return;
+        return res.json().then((data: Record<string, unknown>) => {
+          if (data.themePreference && VALID_THEME_MODES.has(data.themePreference as string)) {
+            setThemeMode(data.themePreference as ThemeMode);
+          }
+          if (data.accentColor && isValidHex(data.accentColor as string)) {
+            setAccentColor(data.accentColor as string);
+          }
+        });
       })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
-  async function handleSave() {
+  const handleSave = useCallback(async () => {
+    // Validate before sending — defense in depth (server also validates)
+    if (!VALID_THEME_MODES.has(themeMode)) return;
+    if (!isValidHex(accentColor)) return;
+
     setSaving(true);
     try {
-      const res = await authFetch('/api/settings/preferences', {
+      const { res, sessionExpired: expired } = await authFetch('/api/settings/preferences', {
         method: 'PATCH',
         body: JSON.stringify({ themePreference: themeMode, accentColor }),
       });
+      if (expired) { setSessionExpired(true); return; }
+      if (res.status === 403) { setAccessDenied(true); return; }
       if (res.ok) {
-        setToast('Saved');
-        setTimeout(() => setToast(null), 3000);
+        setSavedToast(true);
+        setTimeout(() => setSavedToast(false), 3000);
       }
     } finally {
       setSaving(false);
     }
-  }
+  }, [themeMode, accentColor]);
 
-  async function handleReset() {
+  const handleReset = useCallback(async () => {
     setThemeMode(DEFAULT_THEME);
     setAccentColor(DEFAULT_ACCENT);
     setShowCustom(false);
@@ -143,20 +188,18 @@ export default function ThemeSettingsSection() {
       method: 'PATCH',
       body: JSON.stringify({ themePreference: DEFAULT_THEME, accentColor: DEFAULT_ACCENT }),
     }).catch(() => {});
-  }
+  }, []);
 
   function handleCustomHexChange(val: string) {
     setCustomHex(val);
-    if (val === '') {
-      setCustomError('');
-      return;
-    }
+    if (val === '') { setCustomError(''); return; }
     const withHash = val.startsWith('#') ? val : `#${val}`;
     if (isValidHex(withHash)) {
       setCustomError('');
       setAccentColor(withHash);
     } else {
-      setCustomError('Enter a valid 6-digit hex color (e.g. #a3b4c5)');
+      setCustomError('Enter a valid 3 or 6-digit hex color (e.g. #a3b4c5)');
+      // Do NOT apply invalid value to CSS or state
     }
   }
 
@@ -168,11 +211,29 @@ export default function ThemeSettingsSection() {
     { id: 'system', label: 'System', icon: <Monitor className="w-4 h-4" /> },
   ];
 
+  if (sessionExpired) {
+    return <Toast message="Session expired. Please sign in again." variant="error" />;
+  }
+
+  if (accessDenied) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-red-500 p-4 bg-red-50 dark:bg-red-900/10 rounded-lg">
+        <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+        <span>Access Denied. You do not have permission to view these settings.</span>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8">
       <div>
         <h2 className="text-base font-semibold text-gray-800 dark:text-gray-200 mb-1">Appearance</h2>
         <p className="text-sm text-gray-500 dark:text-gray-400">Customize the look and feel of your dashboard.</p>
+        {notFound && (
+          <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+            Settings not found — saving will create them.
+          </p>
+        )}
       </div>
 
       {/* Theme mode */}
@@ -281,10 +342,10 @@ export default function ThemeSettingsSection() {
         </button>
       </div>
 
-      {/* Toast */}
-      {toast && (
+      {/* Saved toast */}
+      {savedToast && (
         <div className="fixed bottom-6 right-6 z-50 bg-green-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg">
-          {toast}
+          Saved
         </div>
       )}
     </div>
