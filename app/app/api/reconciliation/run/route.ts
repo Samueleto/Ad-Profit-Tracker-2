@@ -5,10 +5,29 @@ import { verifyAuthToken } from "@/lib/firebase-admin/verify-token";
 import { SUPPORTED_NETWORKS } from "@/lib/constants";
 import { serializeDoc } from "@/lib/networks/network-helpers";
 
+// In-memory rate limit: 10 reconciliation runs per hour per uid
+const runRateLimit = new Map<string, { count: number; resetAt: number }>();
+
 export async function POST(request: Request) {
   const authResult = await verifyAuthToken(request);
   if ("error" in authResult) return authResult.error;
   const uid = authResult.token.uid;
+
+  // Rate limit: 10 runs per hour
+  const now = Date.now();
+  const entry = runRateLimit.get(uid);
+  if (entry && now < entry.resetAt && entry.count >= 10) {
+    const retryAfter = Math.ceil((entry.resetAt - now) / 1000);
+    return NextResponse.json(
+      { error: "Rate limit exceeded. Maximum 10 reconciliation runs per hour." },
+      { status: 429, headers: { "Retry-After": String(retryAfter) } }
+    );
+  }
+  if (!entry || now >= entry.resetAt) {
+    runRateLimit.set(uid, { count: 1, resetAt: now + 60 * 60 * 1000 });
+  } else {
+    entry.count++;
+  }
 
   try {
     const body = await request.json();

@@ -91,7 +91,13 @@ service cloud.firestore {
       allow update: if isResourceOwner()
         && isImmutableField('uid')
         && isImmutableField('networkId')
-        && isImmutableField('date');
+        && isImmutableField('date')
+        // Reconciliation fields are written server-side only via Admin SDK
+        && isImmutableField('validationStatus')
+        && isImmutableField('anomalyFlags')
+        && isImmutableField('validationCheckedAt')
+        && isImmutableField('isReconciled')
+        && isImmutableField('reconciledAt');
       allow delete: if false;
     }
 
