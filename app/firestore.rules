@@ -34,6 +34,20 @@ service cloud.firestore {
         && isImmutableField('role');
 
       allow delete: if false;
+
+      // ── apiKeys subcollection ──────────────────────────────────────────────
+      // Stores encrypted API keys per network. All writes go through server-side
+      // Admin SDK (which bypasses rules), but rules still protect direct client access.
+      match /apiKeys/{networkId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && request.resource.data.userId == request.auth.uid;
+        allow update: if isOwner(userId)
+          && isImmutableField('createdAt')
+          && isImmutableField('userId');
+        // Hard delete is supported — user can remove a key
+        allow delete: if isOwner(userId);
+      }
     }
 
     // ========== apiKeys collection ==========
