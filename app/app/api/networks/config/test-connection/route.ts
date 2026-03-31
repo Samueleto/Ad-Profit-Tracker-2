@@ -12,10 +12,32 @@ const NETWORK_TEST_URLS: Record<string, string> = {
   propush: "https://api.propush.me/v1/user",
 };
 
+// In-memory rate limit: 10 connection tests per hour per uid
+const testRateLimit = new Map<string, { count: number; resetAt: number }>();
+
+function checkTestRateLimit(uid: string): boolean {
+  const now = Date.now();
+  const entry = testRateLimit.get(uid);
+  if (!entry || now >= entry.resetAt) {
+    testRateLimit.set(uid, { count: 1, resetAt: now + 60 * 60 * 1000 });
+    return true;
+  }
+  if (entry.count >= 10) return false;
+  entry.count++;
+  return true;
+}
+
 export async function POST(request: Request) {
   const authResult = await verifyAuthToken(request);
   if ("error" in authResult) return authResult.error;
   const uid = authResult.token.uid;
+
+  if (!checkTestRateLimit(uid)) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded. Maximum 10 connection tests per hour." },
+      { status: 429 }
+    );
+  }
 
   try {
     const body = await request.json();

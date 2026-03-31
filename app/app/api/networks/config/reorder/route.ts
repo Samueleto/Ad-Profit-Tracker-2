@@ -4,10 +4,32 @@ import { adminDb } from "@/lib/firebase-admin/admin";
 import { verifyAuthToken } from "@/lib/firebase-admin/verify-token";
 import { isValidNetworkId } from "@/lib/constants";
 
+// In-memory rate limit: 30 reorders per minute per uid
+const reorderRateLimit = new Map<string, { count: number; resetAt: number }>();
+
+function checkReorderRateLimit(uid: string): boolean {
+  const now = Date.now();
+  const entry = reorderRateLimit.get(uid);
+  if (!entry || now >= entry.resetAt) {
+    reorderRateLimit.set(uid, { count: 1, resetAt: now + 60_000 });
+    return true;
+  }
+  if (entry.count >= 30) return false;
+  entry.count++;
+  return true;
+}
+
 export async function PATCH(request: Request) {
   const authResult = await verifyAuthToken(request);
   if ("error" in authResult) return authResult.error;
   const uid = authResult.token.uid;
+
+  if (!checkReorderRateLimit(uid)) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded. Maximum 30 reorder requests per minute." },
+      { status: 429 }
+    );
+  }
 
   try {
     const body = await request.json();
