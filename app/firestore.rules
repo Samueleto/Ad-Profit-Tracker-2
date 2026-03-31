@@ -101,6 +101,19 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ========== notifications collection ==========
+    // All writes go through the server-side Admin SDK (which bypasses rules).
+    // Clients can only read their own notifications.
+    // The 'createdAt' field is written server-side and must never be changed by clients;
+    // since creates/updates come exclusively through Admin SDK this is enforced implicitly,
+    // but direct client creates and updates are blocked here as defence-in-depth.
+    match /notifications/{notifId} {
+      allow read: if isAuthenticated() && resource.data.uid == request.auth.uid;
+      allow create: if false; // Server-side only via Admin SDK
+      allow update: if false; // Server-side only via Admin SDK
+      allow delete: if false; // Server-side only via Admin SDK
+    }
+
     // ========== auditLogs collection ==========
     // Writes are exclusively via the server-side Admin SDK (which bypasses rules).
     // Clients must never write directly to auditLogs.
