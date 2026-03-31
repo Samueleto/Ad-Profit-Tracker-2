@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getAuthHeaders } from '@/lib/auth/getAuthHeaders';
+import { authFetch as sharedAuthFetch, clampDateRange } from '@/lib/api/auth-fetch';
 import type {
   MetricKey,
   BenchmarkPerformanceResponse,
@@ -13,11 +13,19 @@ import type {
 // ─── Shared fetch ─────────────────────────────────────────────────────────────
 
 async function authFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = await getAuthHeaders();
-  const res = await fetch(path, { ...init, headers: { ...headers, ...(init.headers as Record<string, string> ?? {}) } });
+  // Uses shared utility: getIdToken(false) → retry with getIdToken(true) on 401
+  // → redirect to / with 'Session expired' toast if retry also fails
+  const res = await sharedAuthFetch(path, init);
+  if (res === null) throw new Error('Session expired');
+  if (res.status === 429) {
+    const retryAfter = res.headers.get('Retry-After');
+    throw new Error(
+      `Too many updates, please wait${retryAfter ? ` (retry after ${retryAfter}s)` : ''} before saving again.`
+    );
+  }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data?.message ?? `Request failed: ${res.status}`);
+    throw new Error(data?.error ?? data?.message ?? `Request failed: ${res.status}`);
   }
   return res.json();
 }
@@ -92,7 +100,9 @@ export function useBenchmarkingData(dateFrom: string, dateTo: string, enabled = 
   useEffect(() => {
     if (!enabled || !dateFrom || !dateTo) return;
     const fetchId = ++metricFetchIdRef.current;
-    const params = new URLSearchParams({ dateFrom, dateTo, metric: selectedMetric });
+    // Clamp date range to 90 days client-side (server still validates independently)
+    const { dateFrom: clampedFrom, dateTo: clampedTo } = clampDateRange(dateFrom, dateTo);
+    const params = new URLSearchParams({ dateFrom: clampedFrom, dateTo: clampedTo, metric: selectedMetric });
     setPerformanceLoading(true);
     authFetch<BenchmarkPerformanceResponse>(`/api/benchmarks/performance?${params}`)
       .then(d => { if (fetchId === metricFetchIdRef.current) { setPerformanceData(d); setPerformanceError(null); } })

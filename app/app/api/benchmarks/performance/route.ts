@@ -1,14 +1,18 @@
 import { NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin/admin';
 import { verifyAuthToken } from '@/lib/firebase-admin/verify-token';
-import { computeRoi, getColorCode } from '@/lib/roi/formula';
+import { computeRoi } from '@/lib/roi/formula';
+import { isValidNetworkId } from '@/lib/constants';
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_RANGE_DAYS = 90;
+const VALID_METRICS = new Set(['roi', 'ctr', 'cpm', 'revenue', 'cost', 'impressions', 'clicks']);
 
 export async function GET(request: Request) {
+  // Token verification first — before any Firestore reads
   const authResult = await verifyAuthToken(request);
   if ('error' in authResult) return authResult.error;
-
-  const { token } = authResult;
-  const uid = token.uid;
+  const uid = authResult.token.uid;
 
   try {
     const { searchParams } = new URL(request.url);
@@ -17,7 +21,27 @@ export async function GET(request: Request) {
     const metric = searchParams.get('metric') || 'roi';
     const networkId = searchParams.get('networkId') || null;
 
-    // Get benchmark settings
+    // Input validation
+    if (dateFrom && !DATE_RE.test(dateFrom)) {
+      return NextResponse.json({ error: 'dateFrom must be in YYYY-MM-DD format' }, { status: 400 });
+    }
+    if (dateTo && !DATE_RE.test(dateTo)) {
+      return NextResponse.json({ error: 'dateTo must be in YYYY-MM-DD format' }, { status: 400 });
+    }
+    if (dateFrom && dateTo) {
+      const diff = Math.round((new Date(dateTo).getTime() - new Date(dateFrom).getTime()) / 86400000);
+      if (diff > MAX_RANGE_DAYS) {
+        return NextResponse.json({ error: `Date range cannot exceed ${MAX_RANGE_DAYS} days` }, { status: 400 });
+      }
+    }
+    if (!VALID_METRICS.has(metric)) {
+      return NextResponse.json({ error: 'Invalid metric' }, { status: 400 });
+    }
+    if (networkId && !isValidNetworkId(networkId)) {
+      return NextResponse.json({ error: 'Invalid networkId' }, { status: 400 });
+    }
+
+    // Get benchmark settings — uid used as document key (no separate query filter needed)
     const benchmarkDoc = await adminDb.collection('benchmarks').doc(uid).get();
     const benchmarkData = benchmarkDoc.exists ? benchmarkDoc.data() : null;
 
@@ -37,10 +61,10 @@ export async function GET(request: Request) {
       ? metricTargets[metric].customTarget
       : systemDefaults[metric] ?? 0;
 
-    // Query current period stats
+    // Query current period stats — uid always from verified token, never from params
     let statsQuery = adminDb
       .collection('adStats')
-      .where('userId', '==', uid) as FirebaseFirestore.Query;
+      .where('uid', '==', uid) as FirebaseFirestore.Query;
 
     if (dateFrom) statsQuery = statsQuery.where('date', '>=', dateFrom);
     if (dateTo) statsQuery = statsQuery.where('date', '<=', dateTo);
