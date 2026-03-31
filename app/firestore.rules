@@ -88,7 +88,10 @@ service cloud.firestore {
     match /adStats/{docId} {
       allow read: if isResourceOwner();
       allow create: if false; // Server-side only via Admin SDK
-      allow update: if false; // Server-side only via Admin SDK
+      allow update: if isResourceOwner()
+        && isImmutableField('uid')
+        && isImmutableField('networkId')
+        && isImmutableField('date');
       allow delete: if false;
     }
 
