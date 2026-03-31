@@ -35,19 +35,37 @@ const DATE_RANGE_OPTS: { value: DateRangeOpt; label: string }[] = [
 ];
 
 // ─── Auth fetch ───────────────────────────────────────────────────────────────
+// Retries with a force-refreshed token on 401. Returns the response so callers
+// can inspect the status and handle persistent 401 (session expired).
 
 async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
-  return fetch(path, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init.headers as Record<string, string> ?? {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
+  const buildReq = async (refresh: boolean) => {
+    const token = await auth.currentUser?.getIdToken(refresh);
+    return fetch(path, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(init.headers as Record<string, string> ?? {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+  };
+  let res = await buildReq(false);
+  if (res.status === 401) {
+    res = await buildReq(true);
+  }
+  return res;
 }
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+const RATE_LIMIT_MESSAGES: Record<string, string> = {
+  create: "You've reached the schedule limit. Try again later.",
+  update: 'Too many updates. Please wait before trying again.',
+  delete: 'Too many deletes. Please wait before trying again.',
+  sendNow: 'Too many test emails. Please wait before trying again.',
+};
 
 // ─── Next delivery preview ────────────────────────────────────────────────────
 
@@ -91,6 +109,7 @@ export default function ScheduleReportModal({ reportId, reportName, onClose, onS
   const [testSending, setTestSending] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [emailError, setEmailError] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   const auth = getAuth();
@@ -140,13 +159,31 @@ export default function ScheduleReportModal({ reportId, reportName, onClose, onS
   }
 
   async function handleSave() {
+    // Trim and validate email before any API call
+    const trimmedEmail = schedule.email.trim();
+    if (!trimmedEmail || !EMAIL_RE.test(trimmedEmail)) {
+      setEmailError('Please enter a valid email address.');
+      return;
+    }
+    setEmailError(null);
+
     setSaving(true);
     setError(null);
     try {
-      const body = { ...schedule, reportId };
-      const res = existingId
-        ? await authFetch(`/api/schedules/${existingId}`, { method: 'PATCH', body: JSON.stringify(body) })
-        : await authFetch('/api/schedules/create', { method: 'POST', body: JSON.stringify(body) });
+      const body = { ...schedule, email: trimmedEmail, reportId };
+      const isNew = !existingId;
+      const res = isNew
+        ? await authFetch('/api/schedules/create', { method: 'POST', body: JSON.stringify(body) })
+        : await authFetch(`/api/schedules/${existingId}`, { method: 'PATCH', body: JSON.stringify(body) });
+      if (res.status === 401) {
+        onClose();
+        window.location.replace('/');
+        return;
+      }
+      if (res.status === 429) {
+        setError(isNew ? RATE_LIMIT_MESSAGES.create : RATE_LIMIT_MESSAGES.update);
+        return;
+      }
       if (res.ok) {
         const data = await res.json();
         if (data?.id) setExistingId(data.id);
@@ -167,6 +204,8 @@ export default function ScheduleReportModal({ reportId, reportName, onClose, onS
     if (!existingId) return;
     if (!confirm('Delete this schedule? This cannot be undone.')) return;
     const res = await authFetch(`/api/schedules/${existingId}`, { method: 'DELETE' });
+    if (res.status === 401) { onClose(); window.location.replace('/'); return; }
+    if (res.status === 429) { setError(RATE_LIMIT_MESSAGES.delete); return; }
     if (res.ok) {
       onDeleted?.();
       setToast('Schedule deleted');
@@ -177,11 +216,17 @@ export default function ScheduleReportModal({ reportId, reportName, onClose, onS
   async function handleTestSend() {
     if (!existingId) return;
     setTestSending(true);
+    setError(null);
     try {
+      // No request body — delivery email must come from the stored schedule on the server
       const res = await authFetch(`/api/schedules/${existingId}/send-now`, { method: 'POST' });
+      if (res.status === 401) { onClose(); window.location.replace('/'); return; }
+      if (res.status === 429) { setError(RATE_LIMIT_MESSAGES.sendNow); return; }
       if (res.ok) {
         setToast(`Test email sent to ${schedule.email}`);
         setTimeout(() => setToast(null), 3000);
+      } else {
+        setError(`Send failed (${res.status})`);
       }
     } finally {
       setTestSending(false);
@@ -299,10 +344,15 @@ export default function ScheduleReportModal({ reportId, reportName, onClose, onS
                 <input
                   type="email"
                   value={schedule.email}
-                  onChange={e => update({ email: e.target.value })}
+                  onChange={e => { update({ email: e.target.value }); setEmailError(null); }}
                   disabled={saving}
-                  className="w-full text-sm px-2.5 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                  className={`w-full text-sm px-2.5 py-1.5 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 ${emailError ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
                 />
+                {emailError && (
+                  <p className="text-xs text-red-500 flex items-center gap-1">
+                    <span>⚠</span> {emailError}
+                  </p>
+                )}
               </div>
 
               {/* Date range + format */}

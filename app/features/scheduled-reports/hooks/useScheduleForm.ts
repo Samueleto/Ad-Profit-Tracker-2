@@ -58,15 +58,52 @@ function getCurrentUserEmail(): string {
   return auth.currentUser?.email ?? '';
 }
 
-async function getFreshToken(): Promise<string | undefined> {
+async function getFreshToken(refresh = false): Promise<string | undefined> {
   const auth = getAuth();
-  return auth.currentUser?.getIdToken();
+  return auth.currentUser?.getIdToken(refresh);
 }
 
 function buildAuthHeaders(token?: string): Record<string, string> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) headers.Authorization = `Bearer ${token}`;
   return headers;
+}
+
+// Basic email validation — prevents obviously malformed addresses from hitting the server
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+function isValidEmail(email: string): boolean {
+  return EMAIL_RE.test(email.trim());
+}
+
+// Friendly rate limit messages per endpoint type
+const RATE_LIMIT_MESSAGES: Record<string, string> = {
+  create: "You've reached the schedule limit. Try again later.",
+  update: 'Too many updates. Please wait before trying again.',
+  delete: 'Too many deletes. Please wait before trying again.',
+  sendNow: 'Too many test emails. Please wait before trying again.',
+};
+
+// Auth fetch with 401 retry: tries with cached token, retries with force-refresh on 401.
+// Returns the response; callers inspect status and call onExpired if still 401.
+async function scheduleAuthFetch(
+  url: string,
+  init: RequestInit = {},
+  onExpired?: () => void
+): Promise<Response> {
+  const makeReq = async (refresh: boolean) => {
+    const token = await getFreshToken(refresh);
+    return fetch(url, { ...init, headers: buildAuthHeaders(token) });
+  };
+  let res = await makeReq(false);
+  if (res.status === 401) {
+    res = await makeReq(true);
+    if (res.status === 401) {
+      // Session genuinely expired — redirect to sign-in
+      onExpired?.();
+      window.location.replace('/');
+    }
+  }
+  return res;
 }
 
 function computeNextDelivery(
@@ -172,7 +209,7 @@ function scheduleToFormValues(schedule: ScheduledReport): ScheduleFormValues {
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
-export function useScheduleForm(onSuccess?: () => void): UseScheduleFormResult {
+export function useScheduleForm(onSuccess?: () => void, onExpired?: () => void): UseScheduleFormResult {
   const [form, setForm] = useState<ScheduleFormValues>(buildDefaults);
   const [existingSchedule, setExistingSchedule] = useState<ScheduledReport | null>(null);
   const [loading, setLoading] = useState(false);
@@ -209,10 +246,11 @@ export function useScheduleForm(onSuccess?: () => void): UseScheduleFormResult {
     setLoading(true);
     setErrors({});
     try {
-      const token = await getFreshToken();
-      const res = await fetch(`/api/schedules?reportId=${encodeURIComponent(reportId)}`, {
-        headers: buildAuthHeaders(token),
-      });
+      const res = await scheduleAuthFetch(
+        `/api/schedules?reportId=${encodeURIComponent(reportId)}`,
+        {},
+        onExpired
+      );
       if (!res.ok) {
         setErrors({ general: `Failed to load schedule (${res.status}).` });
         return;
@@ -228,15 +266,21 @@ export function useScheduleForm(onSuccess?: () => void): UseScheduleFormResult {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onExpired]);
 
   const saveSchedule = useCallback(async (reportId: string, reportName = ''): Promise<boolean> => {
     if (saving) return false;
+
+    // Client-side email validation before any API call
+    const trimmedEmail = form.deliveryEmail.trim();
+    if (!trimmedEmail || !isValidEmail(trimmedEmail)) {
+      setErrors({ deliveryEmail: 'Please enter a valid email address.' });
+      return false;
+    }
+
     setSaving(true);
     setErrors({});
     try {
-      const token = await getFreshToken();
-      const headers = buildAuthHeaders(token);
       const isNew = !existingSchedule;
 
       const payload = isNew
@@ -248,7 +292,7 @@ export function useScheduleForm(onSuccess?: () => void): UseScheduleFormResult {
             ...(form.frequency === 'monthly' ? { dayOfMonth: form.dayOfMonth } : {}),
             deliveryHour: form.deliveryHour,
             timezone: form.timezone,
-            deliveryEmail: form.deliveryEmail,
+            deliveryEmail: trimmedEmail, // always trimmed
             dateRangePreset: form.dateRangePreset,
             format: form.format,
             isActive: form.isActive,
@@ -259,7 +303,7 @@ export function useScheduleForm(onSuccess?: () => void): UseScheduleFormResult {
             ...(form.frequency === 'monthly' ? { dayOfMonth: form.dayOfMonth } : {}),
             deliveryHour: form.deliveryHour,
             timezone: form.timezone,
-            deliveryEmail: form.deliveryEmail,
+            deliveryEmail: trimmedEmail, // always trimmed
             dateRangePreset: form.dateRangePreset,
             format: form.format,
             isActive: form.isActive,
@@ -268,11 +312,15 @@ export function useScheduleForm(onSuccess?: () => void): UseScheduleFormResult {
       const url = isNew ? '/api/schedules/create' : `/api/schedules/${existingSchedule!.id}`;
       const method = isNew ? 'POST' : 'PATCH';
 
-      const res = await fetch(url, { method, headers, body: JSON.stringify(payload) });
+      const res = await scheduleAuthFetch(url, { method, body: JSON.stringify(payload) }, onExpired);
 
       if (res.status === 400) {
         const body = await res.json().catch(() => ({}));
         setErrors(body.fieldErrors ?? { general: body.message ?? 'Validation failed.' });
+        return false;
+      }
+      if (res.status === 429) {
+        setErrors({ general: isNew ? RATE_LIMIT_MESSAGES.create : RATE_LIMIT_MESSAGES.update });
         return false;
       }
       if (!res.ok) {
@@ -291,18 +339,22 @@ export function useScheduleForm(onSuccess?: () => void): UseScheduleFormResult {
     } finally {
       setSaving(false);
     }
-  }, [saving, existingSchedule, form, onSuccess]);
+  }, [saving, existingSchedule, form, onSuccess, onExpired]);
 
   const deleteSchedule = useCallback(async (): Promise<boolean> => {
     if (!existingSchedule || saving) return false;
     setSaving(true);
     setErrors({});
     try {
-      const token = await getFreshToken();
-      const res = await fetch(`/api/schedules/${existingSchedule.id}`, {
-        method: 'DELETE',
-        headers: buildAuthHeaders(token),
-      });
+      const res = await scheduleAuthFetch(
+        `/api/schedules/${existingSchedule.id}`,
+        { method: 'DELETE' },
+        onExpired
+      );
+      if (res.status === 429) {
+        setErrors({ general: RATE_LIMIT_MESSAGES.delete });
+        return false;
+      }
       if (!res.ok) {
         setErrors({ general: `Delete failed (${res.status}).` });
         return false;
@@ -317,24 +369,27 @@ export function useScheduleForm(onSuccess?: () => void): UseScheduleFormResult {
     } finally {
       setSaving(false);
     }
-  }, [existingSchedule, saving, onSuccess]);
+  }, [existingSchedule, saving, onSuccess, onExpired]);
 
   const sendTestNow = useCallback(async () => {
     if (!existingSchedule) return;
     setErrors({});
     try {
-      const token = await getFreshToken();
-      const res = await fetch(`/api/schedules/${existingSchedule.id}/send-now`, {
-        method: 'POST',
-        headers: buildAuthHeaders(token),
-      });
-      if (!res.ok) {
+      // No request body — delivery email comes from the stored schedule on the server
+      const res = await scheduleAuthFetch(
+        `/api/schedules/${existingSchedule.id}/send-now`,
+        { method: 'POST' },
+        onExpired
+      );
+      if (res.status === 429) {
+        setErrors({ general: RATE_LIMIT_MESSAGES.sendNow });
+      } else if (!res.ok) {
         setErrors({ general: `Send failed (${res.status}).` });
       }
     } catch {
       setErrors({ general: 'Failed to send test email.' });
     }
-  }, [existingSchedule]);
+  }, [existingSchedule, onExpired]);
 
   return {
     form,
