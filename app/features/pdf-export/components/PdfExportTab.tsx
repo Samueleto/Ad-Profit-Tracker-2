@@ -96,23 +96,17 @@ export default function PdfExportTab({ dateFrom, dateTo, preview, previewLoading
       });
 
     try {
-      let token = await getToken();
+      // Always force-refresh the token before each export so it is never stale.
+      // getIdToken(true) contacts Firebase to get a fresh token regardless of
+      // the cached token's remaining lifetime.
+      let token = await getToken(true);
       let res = await doFetch(token);
 
       if (res.status === 401) {
-        try {
-          token = await getToken(true);
-          res = await doFetch(token);
-          if (res.status === 401) {
-            onClose();
-            router.push('/');
-            return;
-          }
-        } catch {
-          onClose();
-          router.push('/');
-          return;
-        }
+        // Force-refresh already failed — session is fully expired
+        onClose();
+        router.push('/');
+        return;
       }
 
       if (res.status === 403) {
