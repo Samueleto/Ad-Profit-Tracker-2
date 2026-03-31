@@ -2,7 +2,9 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { getAuth } from "firebase/auth";
+import { useRouter } from "next/navigation";
 import { format, subDays, differenceInDays, differenceInMinutes } from "date-fns";
+import { toast } from "sonner";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -90,6 +92,7 @@ export function useDashboardMetrics(): UseDashboardMetricsResult {
   const [dateRangeValidationError, setDateRangeValidationError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const [fetchTrigger, setFetchTrigger] = useState(0);
+  const router = useRouter();
 
   const doFetch = useCallback(async (range: DateRange) => {
     abortRef.current?.abort();
@@ -101,7 +104,20 @@ export function useDashboardMetrics(): UseDashboardMetricsResult {
       const params = new URLSearchParams({ dateFrom: range.dateFrom, dateTo: range.dateTo });
       let res = await fetchWithToken(`/api/dashboard/metrics?${params}`, signal);
       if (res.status === 401) {
+        // Retry once with force-refreshed token
         res = await fetchWithToken(`/api/dashboard/metrics?${params}`, signal, true);
+        if (res.status === 401) {
+          // Force-refresh also failed — session expired
+          if (!signal.aborted) {
+            setKpis(null);
+            setDailySeries([]);
+            setTopCountries([]);
+            setPerNetwork([]);
+            toast.error("Session expired. Please sign in again.");
+            router.replace("/");
+          }
+          return;
+        }
       }
       if (signal.aborted) return;
       if (!res.ok) {

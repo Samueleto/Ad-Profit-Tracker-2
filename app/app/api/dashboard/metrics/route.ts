@@ -1,28 +1,65 @@
 import { NextResponse } from "next/server";
+import NodeCache from "node-cache";
 import { adminDb } from "@/lib/firebase-admin/admin";
 import { verifyAuthToken } from "@/lib/firebase-admin/verify-token";
 
+const metricsCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const MAX_RANGE_DAYS = 90;
+
 export async function GET(request: Request) {
+  // Token verification is the first thing — before any Firestore reads or cache lookups
   const authResult = await verifyAuthToken(request);
   if ("error" in authResult) return authResult.error;
-
-  const { token } = authResult;
-  const uid = token.uid;
+  const uid = authResult.token.uid;
 
   try {
     const { searchParams } = new URL(request.url);
-    const startDate = searchParams.get("startDate");
-    const endDate = searchParams.get("endDate");
+    const dateFrom = searchParams.get("dateFrom");
+    const dateTo = searchParams.get("dateTo");
 
+    // Date format validation
+    if (dateFrom && !DATE_RE.test(dateFrom)) {
+      return NextResponse.json({ error: "dateFrom must be in YYYY-MM-DD format" }, { status: 400 });
+    }
+    if (dateTo && !DATE_RE.test(dateTo)) {
+      return NextResponse.json({ error: "dateTo must be in YYYY-MM-DD format" }, { status: 400 });
+    }
+
+    // 90-day cap — server is the real security boundary
+    if (dateFrom && dateTo) {
+      if (dateFrom > dateTo) {
+        return NextResponse.json({ error: "dateFrom must be <= dateTo" }, { status: 400 });
+      }
+      const diff = Math.round(
+        (new Date(dateTo).getTime() - new Date(dateFrom).getTime()) / 86400000
+      );
+      if (diff > MAX_RANGE_DAYS) {
+        return NextResponse.json(
+          { error: `Date range cannot exceed ${MAX_RANGE_DAYS} days` },
+          { status: 400 }
+        );
+      }
+    }
+
+    // Uid-prefixed cache key — prevents cross-user cache hits
+    const cacheKey = `${uid}_dashboard_metrics_${dateFrom || "all"}_${dateTo || "all"}`;
+    const cached = metricsCache.get(cacheKey);
+    if (cached) {
+      return NextResponse.json(cached);
+    }
+
+    // All Firestore queries scoped to uid from verified token — never from params
     let query = adminDb
       .collection("adStats")
-      .where("userId", "==", uid) as FirebaseFirestore.Query;
+      .where("uid", "==", uid) as FirebaseFirestore.Query;
 
-    if (startDate) {
-      query = query.where("date", ">=", startDate);
+    if (dateFrom) {
+      query = query.where("date", ">=", dateFrom);
     }
-    if (endDate) {
-      query = query.where("date", "<=", endDate);
+    if (dateTo) {
+      query = query.where("date", "<=", dateTo);
     }
 
     const snapshot = await query.get();
@@ -38,39 +75,40 @@ export async function GET(request: Request) {
 
     snapshot.forEach((doc) => {
       const data = doc.data();
-      const revenue = data.revenue || 0;
-      const cost = data.cost || 0;
-      const impressions = data.impressions || 0;
-      const clicks = data.clicks || 0;
+      const revenue = Number(data.revenue) || 0;
+      const cost = Number(data.cost) || 0;
+      const impressions = Number(data.impressions) || 0;
+      const clicks = Number(data.clicks) || 0;
 
       totalRevenue += revenue;
       totalCost += cost;
       totalImpressions += impressions;
       totalClicks += clicks;
 
-      // By network
-      if (!byNetwork[data.networkId]) {
-        byNetwork[data.networkId] = { revenue: 0, cost: 0, impressions: 0, clicks: 0 };
+      if (data.networkId) {
+        if (!byNetwork[data.networkId]) {
+          byNetwork[data.networkId] = { revenue: 0, cost: 0, impressions: 0, clicks: 0 };
+        }
+        byNetwork[data.networkId].revenue += revenue;
+        byNetwork[data.networkId].cost += cost;
+        byNetwork[data.networkId].impressions += impressions;
+        byNetwork[data.networkId].clicks += clicks;
       }
-      byNetwork[data.networkId].revenue += revenue;
-      byNetwork[data.networkId].cost += cost;
-      byNetwork[data.networkId].impressions += impressions;
-      byNetwork[data.networkId].clicks += clicks;
 
-      // By date
-      if (!byDate[data.date]) {
-        byDate[data.date] = { revenue: 0, cost: 0 };
+      if (data.date) {
+        if (!byDate[data.date]) {
+          byDate[data.date] = { revenue: 0, cost: 0 };
+        }
+        byDate[data.date].revenue += revenue;
+        byDate[data.date].cost += cost;
       }
-      byDate[data.date].revenue += revenue;
-      byDate[data.date].cost += cost;
     });
 
     const totalProfit = totalRevenue - totalCost;
     const roi = totalCost > 0 ? ((totalRevenue - totalCost) / totalCost) * 100 : null;
     const ctr = totalImpressions > 0 ? (totalClicks / totalImpressions) * 100 : null;
 
-    // Convert byDate to sorted array
-    const profitTrend = Object.entries(byDate)
+    const dailySeries = Object.entries(byDate)
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([date, { revenue, cost }]) => ({
         date,
@@ -79,8 +117,7 @@ export async function GET(request: Request) {
         profit: revenue - cost,
       }));
 
-    // Convert byNetwork to array
-    const networkBreakdown = Object.entries(byNetwork).map(
+    const perNetwork = Object.entries(byNetwork).map(
       ([networkId, { revenue, cost, impressions, clicks }]) => ({
         networkId,
         revenue,
@@ -91,20 +128,29 @@ export async function GET(request: Request) {
       })
     );
 
-    return NextResponse.json({
-      totalRevenue,
-      totalCost,
-      totalProfit,
-      totalImpressions,
-      totalClicks,
-      roi,
-      ctr,
-      profitTrend,
-      networkBreakdown,
+    const cachedAt = new Date().toISOString();
+
+    const result = {
+      kpis: {
+        totalRevenue,
+        totalCost,
+        netProfit: totalProfit,
+        roi,
+        ctr,
+        totalImpressions,
+        totalClicks,
+      },
+      dailySeries,
+      perNetwork,
       recordCount: snapshot.size,
-    });
+      cachedAt,
+    };
+
+    metricsCache.set(cacheKey, result);
+
+    return NextResponse.json(result);
   } catch (error) {
-    console.error("dashboard/metrics error:", error);
+    console.error("GET /api/dashboard/metrics error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
