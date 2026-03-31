@@ -27,6 +27,10 @@ const VALID_PREFERENCE_KEYS = new Set([
   'lowBalance', 'weeklyDigest', 'monthlyReport', 'systemMaintenance',
 ]);
 
+// RFC 5322 simplified email validation
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EMAIL_MAX_LENGTH = 254;
+
 export async function GET(request: Request) {
   const authResult = await verifyAuthToken(request);
   if ('error' in authResult) return authResult.error;
@@ -59,9 +63,33 @@ export async function PATCH(request: Request) {
     const body = await request.json();
 
     // Validate: only allow known preference keys with boolean values
-    const updates: Record<string, boolean> = {};
+    // Special case: 'alertDeliveryEmail' is allowed as a string (RFC 5322, ≤254 chars)
+    const updates: Record<string, boolean | string> = {};
     const changedKeys: string[] = [];
     for (const [key, value] of Object.entries(body)) {
+      if (key === 'alertDeliveryEmail') {
+        if (typeof value !== 'string') {
+          return NextResponse.json(
+            { error: 'alertDeliveryEmail must be a string' },
+            { status: 400 }
+          );
+        }
+        if (value.length > EMAIL_MAX_LENGTH) {
+          return NextResponse.json(
+            { error: `alertDeliveryEmail must be ${EMAIL_MAX_LENGTH} characters or fewer` },
+            { status: 400 }
+          );
+        }
+        if (!EMAIL_RE.test(value)) {
+          return NextResponse.json(
+            { error: 'alertDeliveryEmail must be a valid email address (RFC 5322)' },
+            { status: 400 }
+          );
+        }
+        updates['notificationPreferences.alertDeliveryEmail'] = value.trim();
+        changedKeys.push(key);
+        continue;
+      }
       if (!VALID_PREFERENCE_KEYS.has(key)) {
         return NextResponse.json(
           { error: `Unknown preference key: ${key}` },
