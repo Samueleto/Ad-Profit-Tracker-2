@@ -1,8 +1,11 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-// Cookie name used to track onboarding completion
+// Cookie names
 const OB_DONE_COOKIE = "ob_done";
+// __session is set client-side when the user authenticates, providing a
+// server-side signal that the browser has an active Firebase session.
+const SESSION_COOKIE = "__session";
 
 // Routes that require onboarding to be complete
 const PROTECTED_ROUTES = ["/dashboard", "/settings", "/reports", "/team", "/help", "/reconciliation"];
@@ -21,10 +24,17 @@ export function middleware(request: NextRequest) {
   }
 
   const obDone = request.cookies.get(OB_DONE_COOKIE)?.value === "1";
+  const hasSession = !!request.cookies.get(SESSION_COOKIE)?.value;
 
-  // If authenticated user who has completed onboarding visits /onboarding, send them to /dashboard
+  // If authenticated user who has completed onboarding visits /onboarding, redirect to /dashboard
   if (pathname.startsWith(ONBOARDING_PATH) && obDone) {
     return NextResponse.redirect(new URL("/dashboard", request.url));
+  }
+
+  // /onboarding requires an active Firebase session — redirect to login if absent.
+  // This check runs server-side and cannot be bypassed by disabling JavaScript.
+  if (pathname.startsWith(ONBOARDING_PATH) && !hasSession) {
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
   // If user visits a protected route without the onboarding-done cookie,

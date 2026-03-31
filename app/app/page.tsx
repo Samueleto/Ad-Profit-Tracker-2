@@ -18,6 +18,11 @@ function RootPageInner() {
     const checkOnboarding = async () => {
       try {
         const token = await getAuth().currentUser?.getIdToken();
+        // Set __session cookie so middleware can confirm auth server-side on /onboarding.
+        // This is a routing guard — actual security is enforced by API token verification.
+        if (token) {
+          document.cookie = `__session=${token}; path=/; max-age=3600; SameSite=Lax`;
+        }
         const res = await fetch("/api/auth/get-user", {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
