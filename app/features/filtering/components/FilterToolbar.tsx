@@ -1,8 +1,8 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { SlidersHorizontal, X } from 'lucide-react';
-import { getAuth } from 'firebase/auth';
+import { SlidersHorizontal, X, ShieldAlert } from 'lucide-react';
+import { authFetch } from '@/lib/api/auth-fetch';
 import { useDashboardStore } from '@/store/dashboardStore';
 import { useDateRangeStore } from '@/store/dateRangeStore';
 import { DEFAULT_FILTER_STATE } from '../constants';
@@ -36,6 +36,7 @@ export default function FilterToolbar() {
   const [countryOptions, setCountryOptions] = useState<CountryOption[]>([]);
   const [countryLoading, setCountryLoading] = useState(false);
   const [countryError, setCountryError] = useState(false);
+  const [accessDenied, setAccessDenied] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
 
   const activeCount = countActiveFilters({
@@ -49,12 +50,16 @@ export default function FilterToolbar() {
   const fetchCountries = async () => {
     setCountryLoading(true);
     setCountryError(false);
+    setAccessDenied(false);
     try {
-      const auth = getAuth();
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch(`/api/filters/options?type=country&from=${fromDate}&to=${toDate}`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
+      // Uses shared authFetch: getIdToken(false) → retry with getIdToken(true) on 401
+      // → redirect to / with 'Session expired' toast if retry also fails
+      const res = await authFetch(`/api/filters/options?type=country&dateFrom=${fromDate}&dateTo=${toDate}`);
+      if (res === null) return; // session expired, redirect triggered
+      if (res.status === 403) {
+        setAccessDenied(true);
+        return;
+      }
       if (!res.ok) throw new Error();
       const data = await res.json();
       setCountryOptions(data.countries ?? []);
