@@ -203,17 +203,27 @@ export function useRetrySync(onSuccess?: () => void): UseRetrySyncResult {
       });
       if (res.status === 401) { window.location.href = '/login'; return; }
       if (res.status === 429) {
-        setRetryError(prev => ({ ...prev, [networkId]: "You've retried this network too many times this hour — try again later." }));
+        setRetryError(prev => ({ ...prev, [networkId]: 'Rate limit reached — try again in an hour' }));
+        return;
+      }
+      if (res.status === 404) {
+        setRetryError(prev => ({ ...prev, [networkId]: 'No API key saved for this network — add one in settings' }));
         return;
       }
       if (res.status === 502) {
-        const data = await res.json().catch(() => ({}));
-        setRetryError(prev => ({ ...prev, [networkId]: data?.message ?? 'The network API returned an error. Try again later.' }));
+        setRetryError(prev => ({ ...prev, [networkId]: 'The network API is currently unreachable — try again later' }));
         return;
       }
-      if (!res.ok) {
+      if (res.status === 400) {
         const data = await res.json().catch(() => ({}));
-        setRetryError(prev => ({ ...prev, [networkId]: data?.message ?? `Retry failed (${res.status}).` }));
+        const msg = typeof data?.error === 'string' && data.error.toLowerCase().includes('no failed sync')
+          ? "This network doesn't have a failed sync to retry"
+          : data?.error ?? 'Bad request';
+        setRetryError(prev => ({ ...prev, [networkId]: msg }));
+        return;
+      }
+      if (res.status === 500 || !res.ok) {
+        setRetryError(prev => ({ ...prev, [networkId]: 'Something went wrong on our end — please try again' }));
         return;
       }
       const result = await res.json();
