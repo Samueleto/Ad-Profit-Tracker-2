@@ -13,6 +13,7 @@ import { Eye, EyeOff, Loader2 } from "lucide-react";
 import { auth, googleProvider } from "@/lib/firebase/auth";
 import { db } from "@/lib/firebase/firestore";
 import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { Toast } from "@/components/ui/Toast";
 
 type Tab = "signin" | "signup";
 
@@ -20,30 +21,67 @@ interface LoginModalProps {
   isOpen: boolean;
 }
 
-const FIREBASE_ERRORS: Record<string, string> = {
-  "auth/wrong-password": "Wrong password. Please try again.",
-  "auth/user-not-found": "No account found with this email.",
-  "auth/email-already-in-use": "Email already in use.",
-  "auth/invalid-email": "Invalid email address.",
-  "auth/weak-password": "Password should be at least 6 characters.",
-  "auth/too-many-requests": "Too many attempts. Please try again later.",
-  "auth/popup-closed-by-user": "Sign-in popup was closed.",
-  "auth/network-request-failed": "Network error. Check your connection.",
-  "auth/invalid-credential": "Invalid credentials. Please try again.",
-};
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function mapFirebaseError(err: unknown): string {
+// Codes that belong to the email field
+const EMAIL_ERROR_CODES = new Set([
+  'auth/user-not-found',
+  'auth/invalid-email',
+  'auth/email-already-in-use',
+]);
+
+// Codes that belong to the password field
+const PASSWORD_ERROR_CODES = new Set([
+  'auth/wrong-password',
+  'auth/invalid-credential',
+  'auth/weak-password',
+]);
+
+/**
+ * Maps a Firebase Auth error to a user-friendly message.
+ * Returns null for errors that should be silently ignored (popup-closed-by-user).
+ */
+export function mapFirebaseError(err: unknown): string | null {
   if (err instanceof FirebaseError) {
-    return FIREBASE_ERRORS[err.code] ?? err.message;
+    switch (err.code) {
+      case 'auth/wrong-password':
+      case 'auth/invalid-credential':
+        return 'Incorrect password. Try again or reset your password.';
+      case 'auth/user-not-found':
+        return 'No account found with this email.';
+      case 'auth/email-already-in-use':
+        return 'An account with this email already exists. Try signing in instead.';
+      case 'auth/weak-password':
+        return 'Password must be at least 6 characters.';
+      case 'auth/invalid-email':
+        return 'Please enter a valid email address.';
+      case 'auth/too-many-requests':
+        return 'Too many attempts. Please wait a few minutes and try again.';
+      case 'auth/popup-closed-by-user':
+        return null;
+      case 'auth/popup-blocked':
+        return 'Your browser blocked the sign-in popup. Please allow popups for this site.';
+      case 'auth/network-request-failed':
+        return 'Network error. Check your connection and try again.';
+      case 'auth/user-disabled':
+        return 'This account has been disabled. Contact support.';
+      default:
+        return 'Something went wrong. Please try again.';
+    }
   }
-  return err instanceof Error ? err.message : "An unexpected error occurred.";
+  return 'Something went wrong. Please try again.';
 }
 
-async function syncUser(token: string) {
-  await fetch("/api/auth/sync-user", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
-  });
+// Non-blocking — log and let the user through; AuthContext retries via get-user on next load
+async function syncUser(token: string): Promise<void> {
+  try {
+    await fetch("/api/auth/sync-user", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+  } catch (err) {
+    console.error("sync-user failed (non-blocking):", err);
+  }
 }
 
 export default function LoginModal({ isOpen }: LoginModalProps) {
@@ -55,7 +93,7 @@ export default function LoginModal({ isOpen }: LoginModalProps) {
   const [showPassword, setShowPassword] = useState(false);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [passwordError, setPasswordError] = useState<string | null>(null);
-  const [generalError, setGeneralError] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ msg: string; key: number; retry?: () => void } | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [emailLoading, setEmailLoading] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
@@ -66,7 +104,11 @@ export default function LoginModal({ isOpen }: LoginModalProps) {
   const clearErrors = () => {
     setEmailError(null);
     setPasswordError(null);
-    setGeneralError(null);
+    setToast(null);
+  };
+
+  const showToast = (msg: string, retry?: () => void) => {
+    setToast(prev => ({ msg, key: (prev?.key ?? 0) + 1, retry }));
   };
 
   const handleGoogleSignIn = async () => {
@@ -78,27 +120,23 @@ export default function LoginModal({ isOpen }: LoginModalProps) {
       await syncUser(token);
       router.push("/dashboard");
     } catch (err) {
-      setGeneralError(mapFirebaseError(err));
+      const msg = mapFirebaseError(err);
+      if (msg !== null) {
+        const isNetwork = err instanceof FirebaseError && err.code === 'auth/network-request-failed';
+        showToast(msg, isNetwork ? handleGoogleSignIn : undefined);
+      }
+      // popup-closed-by-user returns null → silently reset loading state
     } finally {
       setGoogleLoading(false);
     }
   };
 
-  const handleEmailAuth = async (e: React.FormEvent) => {
-    e.preventDefault();
-    clearErrors();
-
-    if (tab === "signup" && password !== confirmPassword) {
-      setPasswordError("Passwords do not match.");
-      return;
-    }
-
+  const doEmailAuth = async () => {
     setEmailLoading(true);
     try {
       if (tab === "signup") {
         const result = await createUserWithEmailAndPassword(auth, email, password);
         const token = await result.user.getIdToken();
-        // Write initial user doc to Firestore
         await setDoc(doc(db, "users", result.user.uid), {
           uid: result.user.uid,
           email: result.user.email,
@@ -115,19 +153,45 @@ export default function LoginModal({ isOpen }: LoginModalProps) {
       router.push("/dashboard");
     } catch (err) {
       if (err instanceof FirebaseError) {
-        if (err.code.includes("email")) {
-          setEmailError(mapFirebaseError(err));
-        } else if (err.code.includes("password") || err.code.includes("credential")) {
-          setPasswordError(mapFirebaseError(err));
+        const msg = mapFirebaseError(err);
+        if (msg === null) return;
+        if (EMAIL_ERROR_CODES.has(err.code)) {
+          setEmailError(msg);
+        } else if (PASSWORD_ERROR_CODES.has(err.code)) {
+          setPasswordError(msg);
         } else {
-          setGeneralError(mapFirebaseError(err));
+          // Non-field errors: network, too-many-requests, user-disabled, etc. → toast
+          const isNetwork = err.code === 'auth/network-request-failed';
+          showToast(msg, isNetwork ? doEmailAuth : undefined);
         }
       } else {
-        setGeneralError(mapFirebaseError(err));
+        showToast('Something went wrong. Please try again.');
       }
     } finally {
       setEmailLoading(false);
     }
+  };
+
+  const handleEmailAuth = (e: React.FormEvent) => {
+    e.preventDefault();
+    clearErrors();
+
+    // Client-side validation before any Firebase call
+    let valid = true;
+    if (!email || !EMAIL_RE.test(email)) {
+      setEmailError('Please enter a valid email address.');
+      valid = false;
+    }
+    if (password.length < 6) {
+      setPasswordError('Password must be at least 6 characters.');
+      valid = false;
+    } else if (tab === "signup" && password !== confirmPassword) {
+      setPasswordError("Passwords do not match.");
+      valid = false;
+    }
+    if (!valid) return;
+
+    doEmailAuth();
   };
 
   const handleForgotPassword = async () => {
@@ -140,7 +204,7 @@ export default function LoginModal({ isOpen }: LoginModalProps) {
       await sendPasswordResetEmail(auth, email);
       setForgotSent(true);
     } catch (err) {
-      setEmailError(mapFirebaseError(err));
+      setEmailError(mapFirebaseError(err) ?? 'Something went wrong.');
     } finally {
       setForgotLoading(false);
     }
@@ -168,13 +232,6 @@ export default function LoginModal({ isOpen }: LoginModalProps) {
             </button>
           ))}
         </div>
-
-        {/* General error */}
-        {generalError && (
-          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 rounded-lg text-sm">
-            {generalError}
-          </div>
-        )}
 
         {/* Google button */}
         <button
@@ -215,6 +272,7 @@ export default function LoginModal({ isOpen }: LoginModalProps) {
               type="email"
               value={email}
               onChange={e => { setEmail(e.target.value); setEmailError(null); }}
+              onBlur={() => { if (email && !EMAIL_RE.test(email)) setEmailError('Please enter a valid email address.'); }}
               required
               disabled={isAnyLoading}
               className={`w-full px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 ${
@@ -237,6 +295,7 @@ export default function LoginModal({ isOpen }: LoginModalProps) {
                 type={showPassword ? "text" : "password"}
                 value={password}
                 onChange={e => { setPassword(e.target.value); setPasswordError(null); }}
+                onBlur={() => { if (password && password.length < 6) setPasswordError('Password must be at least 6 characters.'); }}
                 required
                 disabled={isAnyLoading}
                 className={`w-full px-3 py-2 pr-10 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 ${
@@ -306,6 +365,17 @@ export default function LoginModal({ isOpen }: LoginModalProps) {
           </button>
         </form>
       </div>
+
+      {/* Toast for non-field errors (network, too-many-requests, popup-blocked, etc.) */}
+      {toast && (
+        <Toast
+          key={toast.key}
+          message={toast.msg}
+          variant="error"
+          onClose={() => setToast(null)}
+          onRetry={toast.retry}
+        />
+      )}
     </div>
   );
 }

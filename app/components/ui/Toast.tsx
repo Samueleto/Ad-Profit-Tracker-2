@@ -10,9 +10,10 @@ interface ToastProps {
   variant?: ToastVariant;
   durationMs?: number;
   onClose?: () => void;
+  onRetry?: () => void;
 }
 
-export function Toast({ message, variant = 'success', durationMs = 3000, onClose }: ToastProps) {
+export function Toast({ message, variant = 'success', durationMs = 3000, onClose, onRetry }: ToastProps) {
   const [visible, setVisible] = useState(true);
 
   useEffect(() => {
@@ -40,6 +41,14 @@ export function Toast({ message, variant = 'success', durationMs = 3000, onClose
     >
       <Icon className="w-4 h-4 flex-shrink-0" />
       <span>{message}</span>
+      {onRetry && (
+        <button
+          onClick={onRetry}
+          className="ml-1 text-xs underline font-medium opacity-80 hover:opacity-100 transition-opacity flex-shrink-0"
+        >
+          Retry
+        </button>
+      )}
       <button
         onClick={() => { setVisible(false); onClose?.(); }}
         className="ml-auto opacity-60 hover:opacity-100 transition-opacity"

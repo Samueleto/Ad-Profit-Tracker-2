@@ -4,6 +4,7 @@ import React, { createContext, useContext, useEffect, useRef, useState } from "r
 import { User, onAuthStateChanged, signOut as firebaseSignOut } from "firebase/auth";
 import { useRouter } from "next/navigation";
 import { auth } from "@/lib/firebase/auth";
+import { Toast } from "@/components/ui/Toast";
 
 // ─── User profile type (from Firestore `users` collection) ────────────────────
 
@@ -55,7 +56,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Guard against state updates after unmount or after a subsequent auth change
   const currentUidRef = useRef<string | null>(null);
 
-  const fetchUserProfile = async (fbUser: User): Promise<AppUser | null> => {
+  const fetchUserProfile = async (fbUser: User): Promise<{ user: AppUser | null; profileError: string | null }> => {
     const token = await fbUser.getIdToken();
     const headers = { Authorization: `Bearer ${token}` };
 
@@ -67,14 +68,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         method: "POST",
         headers: { ...headers, "Content-Type": "application/json" },
       });
-      if (!syncRes.ok) return null;
+      if (!syncRes.ok) return { user: null, profileError: null };
       // Fetch again after sync
       res = await fetch("/api/auth/get-user", { headers });
     }
 
-    if (!res.ok) return null;
+    if (res.status >= 500) {
+      // Fall back to basic info from Firebase Auth while Firestore is unavailable
+      const fallback: AppUser = {
+        uid: fbUser.uid,
+        email: fbUser.email,
+        displayName: fbUser.displayName,
+        photoURL: fbUser.photoURL,
+        role: 'member',
+      };
+      return { user: fallback, profileError: 'Profile unavailable. Some features may be limited.' };
+    }
+
+    if (!res.ok) return { user: null, profileError: null };
     const data = await res.json();
-    return data?.user ?? data ?? null;
+    return { user: data?.user ?? data ?? null, profileError: null };
   };
 
   useEffect(() => {
@@ -90,10 +103,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       try {
-        const profile = await fetchUserProfile(fbUser);
+        const { user: profile, profileError } = await fetchUserProfile(fbUser);
         // Guard: if auth state changed again while fetching, discard stale result
         if (currentUidRef.current !== fbUser.uid) return;
         setUser(profile);
+        if (profileError) setError(profileError);
       } catch (err) {
         if (currentUidRef.current !== fbUser.uid) return;
         setError(err instanceof Error ? err.message : "Failed to load user profile");
@@ -124,8 +138,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateUser = async (data: Partial<AppUser>) => {
+    const prev = user;
+    setUser(u => u ? { ...u, ...data } : u); // optimistic update
     const token = await getIdToken();
-    if (!token) return;
+    if (!token) { setUser(prev); return; }
     const res = await fetch("/api/auth/update-profile", {
       method: "PATCH",
       headers: {
@@ -134,7 +150,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       },
       body: JSON.stringify(data),
     });
-    if (!res.ok) throw new Error("Failed to update profile");
+    if (!res.ok) {
+      setUser(prev); // revert on failure
+      throw new Error("Failed to update profile");
+    }
     const updated = await res.json();
     setUser(prev => prev ? { ...prev, ...(updated?.user ?? updated ?? data) } : prev);
   };
@@ -142,11 +161,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const deleteAccount = async () => {
     const token = await getIdToken();
     if (!token) return;
-    await fetch("/api/auth/delete-account", {
+    const res = await fetch("/api/auth/delete-account", {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     });
-    // Sign out from Firebase auth so onAuthStateChanged fires and clears state
+    if (!res.ok) {
+      // Do NOT clear auth state — account still exists
+      throw new Error("Failed to delete account. Please try again.");
+    }
+    // Only sign out after confirmed deletion
     await firebaseSignOut(auth);
     setUser(null);
     setFirebaseUser(null);
@@ -158,6 +181,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       value={{ user, firebaseUser, loading, error, signOut, updateUser, deleteAccount, getIdToken }}
     >
       {children}
+      {error && (
+        <Toast
+          key={error}
+          message={error}
+          variant="error"
+          durationMs={6000}
+          onClose={() => setError(null)}
+        />
+      )}
     </AuthContext.Provider>
   );
 }
