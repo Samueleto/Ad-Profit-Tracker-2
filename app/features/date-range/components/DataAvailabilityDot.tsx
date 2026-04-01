@@ -46,6 +46,9 @@ export default function DataAvailabilityDot() {
         if (res.status === 403) {
           setAccessDenied(true);
           setDataAvailability('error');
+          if (process.env.NODE_ENV === 'development') {
+            console.warn('[DataAvailabilityDot] 403 Access Denied on /api/stats/dates — check auth/RBAC config');
+          }
           return;
         }
         if (res.status === 404 || res.status === 204) {
@@ -120,9 +123,9 @@ export default function DataAvailabilityDot() {
 
   // 'none'
   return (
-    <span className="flex items-center gap-1.5 text-xs text-gray-400" title="No data">
+    <span className="flex items-center gap-1.5 text-xs text-gray-400" title="No data for this range">
       <span className="inline-block h-2 w-2 rounded-full bg-gray-400" aria-hidden="true" />
-      <span className="hidden sm:inline">No data</span>
+      <span className="hidden sm:inline">No data for this range</span>
     </span>
   );
 }

@@ -10,12 +10,14 @@ export default function CustomDatePicker() {
   const [localFrom, setLocalFrom] = useState(pendingFromDate ?? '');
   const [localTo, setLocalTo] = useState(pendingToDate ?? '');
 
-  const daysDiff = localFrom && localTo
-    ? differenceInDays(new Date(localTo), new Date(localFrom))
-    : 0;
+  const bothSet = localFrom !== '' && localTo !== '';
+  const oneEmpty = (localFrom === '' && localTo !== '') || (localFrom !== '' && localTo === '');
+  const daysDiff = bothSet ? differenceInDays(new Date(localTo), new Date(localFrom)) : 0;
 
-  const isInvalid = daysDiff > 90 || daysDiff < 0;
-  const canApply = localFrom !== '' && localTo !== '' && !isInvalid;
+  const isOver90 = bothSet && daysDiff > 90;
+  const isInvalidOrder = bothSet && daysDiff < 0;
+  const isInvalid = isOver90 || isInvalidOrder || oneEmpty;
+  const canApply = bothSet && !isInvalid;
 
   const handleFromChange = (val: string) => {
     setLocalFrom(val);
@@ -60,11 +62,11 @@ export default function CustomDatePicker() {
           Apply
         </button>
       </div>
-      {daysDiff > 90 && (
+      {isOver90 && (
         <p className="text-xs text-red-500">Maximum range is 90 days</p>
       )}
-      {daysDiff < 0 && localFrom && localTo && (
-        <p className="text-xs text-red-500">End date must be after start date</p>
+      {(isInvalidOrder || oneEmpty) && (
+        <p className="text-xs text-red-500">Please select a valid date range</p>
       )}
     </div>
   );
