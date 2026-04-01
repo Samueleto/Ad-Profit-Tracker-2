@@ -38,10 +38,13 @@ function capDateRange(fromDate: string, toDate: string): { fromDate: string; toD
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
+export type GeoErrorType = 'error_404' | 'error_500' | null;
+
 export interface UseGeoBreakdownResult {
   countries: GeoCountryRow[];
   loading: boolean;
-  error: boolean;
+  errorType: GeoErrorType;
+  roiFailed: boolean;
   sessionExpired: boolean;
   accessDenied: boolean;
   refresh: () => void;
@@ -50,13 +53,15 @@ export interface UseGeoBreakdownResult {
 export function useGeoBreakdown(fromDate: string, toDate: string): UseGeoBreakdownResult {
   const [countries, setCountries] = useState<GeoCountryRow[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
+  const [errorType, setErrorType] = useState<GeoErrorType>(null);
+  const [roiFailed, setRoiFailed] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
-    setError(false);
+    setErrorType(null);
+    setRoiFailed(false);
     setAccessDenied(false);
     const { fromDate: from, toDate: to } = capDateRange(fromDate, toDate);
 
@@ -96,8 +101,14 @@ export function useGeoBreakdown(fromDate: string, toDate: string): UseGeoBreakdo
         return;
       }
 
+      if (geoRes.status === 404) {
+        setErrorType('error_404');
+        setCountries([]);
+        return;
+      }
+
       if (!geoRes.ok) {
-        setError(true);
+        setErrorType('error_500');
         setCountries([]);
         return;
       }
@@ -114,11 +125,14 @@ export function useGeoBreakdown(fromDate: string, toDate: string): UseGeoBreakdo
           ...r,
           colorCode: enrichMap.get(r.countryCode) ?? r.colorCode ?? 'neutral',
         }));
+      } else if (roiRes !== null) {
+        // ROI fetch returned a non-OK response (not a network throw)
+        setRoiFailed(true);
       }
 
       setCountries(rows);
     } catch {
-      setError(true);
+      setErrorType('error_500');
       setCountries([]);
     } finally {
       setLoading(false);
@@ -129,5 +143,5 @@ export function useGeoBreakdown(fromDate: string, toDate: string): UseGeoBreakdo
     fetchData();
   }, [fetchData]);
 
-  return { countries, loading, error, sessionExpired, accessDenied, refresh: fetchData };
+  return { countries, loading, errorType, roiFailed, sessionExpired, accessDenied, refresh: fetchData };
 }

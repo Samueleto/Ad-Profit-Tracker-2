@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Search, ShieldAlert } from 'lucide-react';
+import { Search, ShieldAlert, AlertTriangle, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
 import { useDateRangeStore } from '@/store/dateRangeStore';
 import { useDashboardStore } from '@/store/dashboardStore';
@@ -38,8 +38,8 @@ const METRIC_OPTIONS: MetricToggle[] = ['Revenue', 'Cost', 'Profit'];
 
 export default function GeoBreakdownSection() {
   const router = useRouter();
-  const { fromDate, toDate } = useDateRangeStore();
-  const { countries, loading, sessionExpired, accessDenied } = useGeoBreakdown(fromDate, toDate);
+  const { fromDate, toDate, setPreset } = useDateRangeStore();
+  const { countries, loading, errorType, roiFailed, sessionExpired, accessDenied, refresh } = useGeoBreakdown(fromDate, toDate);
   const { filters } = useDashboardStore();
 
   useEffect(() => {
@@ -107,12 +107,17 @@ export default function GeoBreakdownSection() {
       render: row => formatNumber(row.clicks as number | null) },
   ];
 
-  if (accessDenied) {
+  // ─── Loading: full skeleton including header ─────────────────────────────────
+  if (loading) {
     return (
-      <div className="flex items-center gap-2 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-700 dark:text-red-400">
-        <ShieldAlert className="w-4 h-4 flex-shrink-0" />
-        <span className="flex-1">Access Denied — you don&apos;t have permission to view geographic data.</span>
-        <Link href="/dashboard" className="text-xs underline flex-shrink-0">Dashboard</Link>
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
+        <div className="sticky top-0 z-10 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex flex-wrap items-center gap-3 animate-pulse">
+          <div className="h-5 w-40 bg-gray-200 dark:bg-gray-700 rounded" />
+          <div className="h-7 w-32 bg-gray-200 dark:bg-gray-700 rounded-lg" />
+          <div className="h-7 w-20 bg-gray-200 dark:bg-gray-700 rounded-lg" />
+          <div className="h-7 flex-1 min-w-[150px] bg-gray-200 dark:bg-gray-700 rounded-lg" />
+        </div>
+        <GeoTableSkeleton />
       </div>
     );
   }
@@ -169,8 +174,31 @@ export default function GeoBreakdownSection() {
       </div>
 
       {/* Content */}
-      {loading ? (
-        <GeoTableSkeleton />
+      {accessDenied ? (
+        <div className="flex items-center gap-2 p-4 text-sm text-red-700 dark:text-red-400">
+          <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+          <span className="flex-1">Access Denied — you don&apos;t have permission to view geographic data.</span>
+          <Link href="/dashboard" className="text-xs underline flex-shrink-0">Dashboard</Link>
+        </div>
+      ) : errorType === 'error_500' ? (
+        <div className="flex items-center gap-2 p-4 bg-red-50 dark:bg-red-900/20 border-t border-red-200 dark:border-red-800 text-sm text-red-700 dark:text-red-400">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          <span className="flex-1">Unable to load geographic data.</span>
+          <button onClick={refresh} className="text-xs underline flex-shrink-0">Retry</button>
+        </div>
+      ) : errorType === 'error_404' ? (
+        <div className="flex flex-col items-center p-8 text-center gap-3">
+          <AlertCircle className="w-5 h-5 text-gray-400" />
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            No geographic data found for selected range.
+          </p>
+          <button
+            onClick={() => setPreset('last7')}
+            className="text-xs text-blue-600 dark:text-blue-400 underline"
+          >
+            Reset to last 7 days
+          </button>
+        </div>
       ) : countries.length === 0 ? (
         <div className="p-8 text-center">
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
@@ -185,6 +213,14 @@ export default function GeoBreakdownSection() {
         </div>
       ) : (
         <>
+          {/* ROI partial failure warning */}
+          {roiFailed && (
+            <div className="flex items-center gap-2 px-4 py-2 bg-amber-50 dark:bg-amber-900/20 border-b border-amber-200 dark:border-amber-700 text-xs text-amber-700 dark:text-amber-400">
+              <AlertTriangle className="w-3.5 h-3.5 flex-shrink-0" />
+              ROI color coding unavailable.
+            </div>
+          )}
+
           {/* Mobile card view */}
           <div className="md:hidden p-3 space-y-2">
             <MobileDataTableWrapper
