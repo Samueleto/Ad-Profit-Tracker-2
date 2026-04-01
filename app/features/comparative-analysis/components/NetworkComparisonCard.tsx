@@ -74,8 +74,10 @@ export default function NetworkComparisonCard({ item, networkName, onNetworkClic
 
         {/* Metric share bar */}
         <div>
-          <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">Share {item.metricShare.toFixed(1)}%</p>
-          <MetricShareBar value={item.metricShare} />
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-1">
+            Share {item.metricShare != null ? `${item.metricShare.toFixed(1)}%` : '—'}
+          </p>
+          <MetricShareBar value={item.metricShare ?? 0} />
         </div>
       </div>
     </div>

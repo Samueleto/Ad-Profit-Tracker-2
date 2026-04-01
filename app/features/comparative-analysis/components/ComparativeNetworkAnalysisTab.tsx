@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Loader2, AlertCircle, RefreshCw, ShieldAlert } from 'lucide-react';
+import { Loader2, AlertCircle, RefreshCw, ShieldAlert, X } from 'lucide-react';
 import { useDateRangeStore } from '@/store/dateRangeStore';
 import type { ComparisonMetric } from '../types';
 import NetworkComparisonCard from './NetworkComparisonCard';
@@ -44,11 +44,20 @@ export default function ComparativeNetworkAnalysisTab({ onNetworkSelect }: Compa
     loadStatus: fetchState,
     errorCode,
     isSyncing: syncingAll,
+    syncFailed,
+    clearSyncFailed,
     sessionExpired,
     dateRangeExceeded,
     fetchComparisonData: fetchData,
     syncAllNetworks: handleSyncAll,
   } = useComparativeAnalysis(fromDate, toDate);
+
+  const [errorDismissed, setErrorDismissed] = useState(false);
+
+  // Reset dismiss when a new fetch starts
+  useEffect(() => {
+    if (fetchState === 'loading') setErrorDismissed(false);
+  }, [fetchState]);
 
   useEffect(() => {
     if (sessionExpired) router.replace('/');
@@ -57,6 +66,14 @@ export default function ComparativeNetworkAnalysisTab({ onNetworkSelect }: Compa
   return (
     <>
     {sessionExpired && <Toast message="Session expired. Please sign in again." variant="error" />}
+    {syncFailed && (
+      <Toast
+        message="Sync failed. Please try again."
+        variant="error"
+        durationMs={5000}
+        onClose={clearSyncFailed}
+      />
+    )}
     <div className="space-y-5">
       {/* Header row with MetricToggle + Sync All */}
       <div className="flex flex-wrap items-center gap-3 justify-between">
@@ -100,11 +117,14 @@ export default function ComparativeNetworkAnalysisTab({ onNetworkSelect }: Compa
           <span className="flex-1">Date range exceeds 90 days. Please select a shorter range.</span>
         </div>
       )}
-      {fetchState === 'error' && errorCode !== 403 && !dateRangeExceeded && (
+      {fetchState === 'error' && errorCode !== 403 && !dateRangeExceeded && !errorDismissed && (
         <div className="flex items-center gap-3 px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-700 dark:text-red-400">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
-          <span className="flex-1">Something went wrong loading comparison data.</span>
-          <button onClick={fetchData} className="text-xs underline hover:no-underline">Retry</button>
+          <span className="flex-1">Failed to load comparison data.</span>
+          <button onClick={fetchData} className="text-xs underline hover:no-underline flex-shrink-0">Retry</button>
+          <button onClick={() => setErrorDismissed(true)} className="p-0.5 hover:bg-red-100 dark:hover:bg-red-900/40 rounded flex-shrink-0" aria-label="Dismiss">
+            <X className="w-3.5 h-3.5" />
+          </button>
         </div>
       )}
 

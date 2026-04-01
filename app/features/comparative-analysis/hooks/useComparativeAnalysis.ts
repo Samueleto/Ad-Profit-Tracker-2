@@ -16,6 +16,8 @@ export interface UseComparativeAnalysisResult {
   loadStatus: LoadStatus;
   errorCode: number | null;
   isSyncing: boolean;
+  syncFailed: boolean;
+  clearSyncFailed: () => void;
   sessionExpired: boolean;
   dateRangeExceeded: boolean;
   fetchComparisonData: () => Promise<void>;
@@ -40,6 +42,7 @@ export function useComparativeAnalysis(
   const [loadStatus, setLoadStatus] = useState<LoadStatus>('idle');
   const [errorCode, setErrorCode] = useState<number | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncFailed, setSyncFailed] = useState(false);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [dateRangeExceeded, setDateRangeExceeded] = useState(false);
   const hasLoadedRef = useRef(false);
@@ -130,9 +133,10 @@ export function useComparativeAnalysis(
 
   const syncAllNetworks = useCallback(async () => {
     setIsSyncing(true);
+    setSyncFailed(false);
     try {
       const token = await getToken();
-      await fetch('/api/sync/manual', {
+      const res = await fetch('/api/sync/manual', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -140,9 +144,15 @@ export function useComparativeAnalysis(
         },
         body: JSON.stringify({}),
       });
+      if (!res.ok) {
+        setSyncFailed(true);
+        return;
+      }
+      await fetchComparisonData();
+    } catch {
+      setSyncFailed(true);
     } finally {
       setIsSyncing(false);
-      await fetchComparisonData();
     }
   }, [fetchComparisonData]);
 
@@ -153,6 +163,8 @@ export function useComparativeAnalysis(
     loadStatus,
     errorCode,
     isSyncing,
+    syncFailed,
+    clearSyncFailed: () => setSyncFailed(false),
     sessionExpired,
     dateRangeExceeded,
     fetchComparisonData,
