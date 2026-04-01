@@ -7,14 +7,36 @@ import type { WorkspaceRole } from '@/features/rbac/types';
 
 // ─── Shared token helper ──────────────────────────────────────────────────────
 
-export async function getFreshToken(): Promise<string | undefined> {
-  return getAuth().currentUser?.getIdToken();
+export async function getFreshToken(refresh = false): Promise<string | undefined> {
+  return getAuth().currentUser?.getIdToken(refresh);
 }
 
 export function buildAuthHeaders(token?: string): Record<string, string> {
   const h: Record<string, string> = {};
   if (token) h.Authorization = `Bearer ${token}`;
   return h;
+}
+
+// Fetch with automatic 401 retry (force-refresh token) then redirect on second 401
+export async function helpAuthFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const makeReq = async (refresh: boolean) => {
+    const token = await getFreshToken(refresh);
+    return fetch(url, {
+      ...init,
+      headers: {
+        ...buildAuthHeaders(token),
+        ...(init.headers as Record<string, string> ?? {}),
+      },
+    });
+  };
+  let res = await makeReq(false);
+  if (res.status === 401) {
+    res = await makeReq(true);
+    if (res.status === 401) {
+      window.location.replace('/');
+    }
+  }
+  return res;
 }
 
 // ─── useHelpCenter ────────────────────────────────────────────────────────────
@@ -64,12 +86,11 @@ export function useHelpCenter(): UseHelpCenterResult {
     setErrorStatus(null);
 
     try {
-      const token = await getFreshToken();
       const params = new URLSearchParams({ limit: '20' });
       if (category) params.set('category', category);
       if (cursor) params.set('cursor', cursor);
 
-      const res = await fetch(`/api/help/articles?${params}`, { headers: buildAuthHeaders(token) });
+      const res = await helpAuthFetch(`/api/help/articles?${params}`);
       if (!res.ok) {
         if (fetchId === fetchIdRef.current) setErrorStatus(res.status);
         return;
@@ -104,16 +125,12 @@ export function useHelpCenter(): UseHelpCenterResult {
     // Fetch role-specific articles after getting the workspace role
     (async () => {
       try {
-        const token = await getFreshToken();
-        const roleRes = await fetch('/api/rbac/my-permissions', { headers: buildAuthHeaders(token) });
+        const roleRes = await helpAuthFetch('/api/rbac/my-permissions');
         if (!roleRes.ok) return;
         const roleData = await roleRes.json();
         const role: WorkspaceRole = roleData.workspaceRole;
         if (!role) return;
-        const token2 = await getFreshToken();
-        const artRes = await fetch(`/api/help/articles?role=${encodeURIComponent(role)}&limit=6`, {
-          headers: buildAuthHeaders(token2),
-        });
+        const artRes = await helpAuthFetch(`/api/help/articles?role=${encodeURIComponent(role)}&limit=6`);
         if (!artRes.ok) return;
         const artData = await artRes.json();
         setRoleArticles(artData.articles ?? []);
@@ -146,10 +163,9 @@ export function useHelpCenter(): UseHelpCenterResult {
     searchDebounceRef.current = setTimeout(async () => {
       setIsSearching(true);
       try {
-        const token = await getFreshToken();
         const params = new URLSearchParams({ q: query });
         if (selectedCategory) params.set('category', selectedCategory);
-        const res = await fetch(`/api/help/search?${params}`, { headers: buildAuthHeaders(token) });
+        const res = await helpAuthFetch(`/api/help/search?${params}`);
         if (!res.ok) return;
         const data = await res.json();
         setSearchResults(data.articles ?? []);

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { buildAuthHeaders, getFreshToken } from './useHelpCenter';
+import { buildAuthHeaders, helpAuthFetch } from './useHelpCenter';
 import type { HelpArticle } from '../types';
 
 // Re-export for convenience
@@ -43,10 +43,7 @@ export function useHelpArticle(articleId: string): UseHelpArticleResult {
 
     (async () => {
       try {
-        const token = await getFreshToken();
-        const res = await fetch(`/api/help/articles/${articleId}`, {
-          headers: buildAuthHeaders(token),
-        });
+        const res = await helpAuthFetch(`/api/help/articles/${articleId}`);
         if (!res.ok) {
           if (mountedRef.current) setErrorStatus(res.status);
           return;
@@ -57,22 +54,14 @@ export function useHelpArticle(articleId: string): UseHelpArticleResult {
         setArticle(fetched);
 
         // Fire-and-forget view increment
-        getFreshToken().then((t) =>
-          fetch(`/api/help/articles/${articleId}/view`, {
-            method: 'PATCH',
-            headers: buildAuthHeaders(t),
-          }).catch(() => {})
-        );
+        helpAuthFetch(`/api/help/articles/${articleId}/view`, { method: 'PATCH' }).catch(() => {});
 
         // Load related articles once category is known
         if (fetched.category) {
           setRelatedLoading(true);
           try {
-            const token2 = await getFreshToken();
             const params = new URLSearchParams({ category: fetched.category, limit: '4' });
-            const relRes = await fetch(`/api/help/articles?${params}`, {
-              headers: buildAuthHeaders(token2),
-            });
+            const relRes = await helpAuthFetch(`/api/help/articles?${params}`);
             if (relRes.ok && mountedRef.current) {
               const relData = await relRes.json();
               setRelatedArticles(
@@ -95,10 +84,9 @@ export function useHelpArticle(articleId: string): UseHelpArticleResult {
     if (feedbackSubmitted) return;
     setFeedbackSubmitted(true);
     try {
-      const token = await getFreshToken();
-      await fetch('/api/help/feedback', {
+      await helpAuthFetch('/api/help/feedback', {
         method: 'POST',
-        headers: { ...buildAuthHeaders(token), 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ articleId, rating }),
       });
     } catch { /* non-critical */ }

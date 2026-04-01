@@ -22,10 +22,20 @@ const CATEGORY_LABELS: Record<HelpCategory, string> = {
 
 async function authFetch(path: string): Promise<Response> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
-  return fetch(path, {
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-  });
+  const makeReq = async (refresh: boolean) => {
+    const token = await auth.currentUser?.getIdToken(refresh);
+    return fetch(path, {
+      headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    });
+  };
+  let res = await makeReq(false);
+  if (res.status === 401) {
+    res = await makeReq(true);
+    if (res.status === 401) {
+      window.location.replace('/');
+    }
+  }
+  return res;
 }
 
 export default function HelpCenterPage() {
