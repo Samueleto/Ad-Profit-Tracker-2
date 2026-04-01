@@ -72,6 +72,7 @@ interface AppShellProps {
 export default function AppShell({ children }: AppShellProps) {
   const pathname = usePathname();
   const { user, signOut } = useAuth();
+  const [isMounted, setIsMounted] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [reconciliationBadge, setReconciliationBadge] = useState(0);
@@ -79,14 +80,15 @@ export default function AppShell({ children }: AppShellProps) {
   const hydrateBadgeFromFirestore = useDashboardStore(s => s.hydrateBadgeFromFirestore);
 
   useEffect(() => {
+    setIsMounted(true);
     fetchReconciliationBadge().then(setReconciliationBadge);
     hydrateBadgeFromFirestore();
   }, [hydrateBadgeFromFirestore]);
 
   return (
     <div className="min-h-screen flex bg-gray-50 dark:bg-gray-900">
-      {/* Mobile navigation drawer (replaces mobile sidebar on small screens) */}
-      <MobileNavigationDrawer open={sidebarOpen} onClose={() => setSidebarOpen(false)} />
+      {/* Mobile navigation drawer — only after hydration to prevent layout flash */}
+      {isMounted && <MobileNavigationDrawer open={sidebarOpen} onClose={() => setSidebarOpen(false)} />}
 
       {/* Legacy mobile sidebar overlay (md+ only) */}
       {sidebarOpen && (
@@ -246,8 +248,8 @@ export default function AppShell({ children }: AppShellProps) {
         </main>
       </div>
 
-      {/* Mobile bottom nav bar */}
-      <MobileBottomNavBar />
+      {/* Mobile bottom nav bar — only after hydration */}
+      {isMounted && <MobileBottomNavBar />}
 
       {/* Notification slide-over panel */}
       <NotificationCenterPanel />

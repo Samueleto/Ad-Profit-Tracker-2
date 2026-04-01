@@ -78,12 +78,22 @@ export default function MobileDataTableWrapper({
   scrollable = false,
   className = '',
 }: MobileDataTableWrapperProps) {
+  // Render nothing when there are no rows — parent handles empty state
+  if (!rows || rows.length === 0) return null;
+
+  // Columns fallback: treat all as primary if config is missing or malformed
+  const safeColumns: ColumnConfig[] = columns?.length
+    ? columns.map(c => ({ ...c, visibility: c.visibility === 'primary' || c.visibility === 'secondary' ? c.visibility : 'primary' }))
+    : rows[0]
+      ? Object.keys(rows[0]).map(k => ({ key: k, label: k, visibility: 'primary' as const }))
+      : [];
+
   return (
     <>
       {/* Mobile: card list */}
       <div className={`md:hidden space-y-2 ${className}`}>
         {rows.map(row => (
-          <CardRow key={String(row[rowKey])} columns={columns} row={row} />
+          <CardRow key={String(row[rowKey])} columns={safeColumns} row={row} />
         ))}
       </div>
 
@@ -98,7 +108,7 @@ export default function MobileDataTableWrapper({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-200 dark:border-gray-700">
-              {columns.map(col => (
+              {safeColumns.map(col => (
                 <th
                   key={col.key}
                   className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 dark:text-gray-400"
@@ -111,7 +121,7 @@ export default function MobileDataTableWrapper({
           <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
             {rows.map(row => (
               <tr key={String(row[rowKey])}>
-                {columns.map(col => (
+                {safeColumns.map(col => (
                   <td key={col.key} className="px-3 py-2.5 text-gray-900 dark:text-gray-100">
                     {col.render ? col.render(row) : String(row[col.key] ?? '—')}
                   </td>

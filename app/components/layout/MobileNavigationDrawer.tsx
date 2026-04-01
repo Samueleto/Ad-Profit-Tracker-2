@@ -27,13 +27,15 @@ export default function MobileNavigationDrawer({ open, onClose }: MobileNavigati
   const touchStartX = useRef<number>(0);
   const [signingOut, setSigningOut] = useState(false);
   const [sessionExpiredToast, setSessionExpiredToast] = useState(false);
+  const [signOutError, setSignOutError] = useState(false);
 
   // Detect session expiry while drawer is open: user transitions from truthy → null
   const hadUserRef = useRef(false);
   useEffect(() => {
     if (loading) return;
     if (!user && hadUserRef.current) {
-      // Auth state changed to null — session expired
+      // Auth state changed to null — session expired; close drawer first
+      onClose();
       setSessionExpiredToast(true);
       router.replace('/');
     }
@@ -73,10 +75,11 @@ export default function MobileNavigationDrawer({ open, onClose }: MobileNavigati
   const handleSignOut = async () => {
     if (signingOut) return;
     setSigningOut(true);
+    setSignOutError(false);
     try {
       await signOut();
     } catch {
-      // ignore — onAuthStateChanged will clean up
+      setSignOutError(true);
     } finally {
       setSigningOut(false);
     }
@@ -91,6 +94,13 @@ export default function MobileNavigationDrawer({ open, onClose }: MobileNavigati
           message="Session expired. Please sign in again."
           variant="error"
           onClose={() => setSessionExpiredToast(false)}
+        />
+      )}
+      {signOutError && (
+        <Toast
+          message="Sign out failed — try again"
+          variant="error"
+          onClose={() => setSignOutError(false)}
         />
       )}
 
@@ -145,7 +155,7 @@ export default function MobileNavigationDrawer({ open, onClose }: MobileNavigati
             )}
             <div className="min-w-0">
               <p className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                {user.displayName ?? 'User'}
+                {user.displayName ?? user.email ?? 'User'}
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{user.email}</p>
             </div>
