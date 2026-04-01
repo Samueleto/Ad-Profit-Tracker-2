@@ -1,8 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { X, Loader2, AlertCircle } from 'lucide-react';
-import { getAuth } from 'firebase/auth';
 import SyncStatusBadge, { type SyncStatus } from './SyncStatusBadge';
 
 interface SyncEvent {
@@ -17,6 +15,10 @@ interface SyncEvent {
 interface SyncHistoryDrawerProps {
   isOpen: boolean;
   onClose: () => void;
+  loading: boolean;
+  events: SyncEvent[];
+  error: string | null;
+  onRetry: () => void;
 }
 
 function formatLatency(ms: number | null): string {
@@ -32,41 +34,7 @@ const NETWORK_LABELS: Record<string, string> = {
   propush: 'Propush',
 };
 
-export default function SyncHistoryDrawer({ isOpen, onClose }: SyncHistoryDrawerProps) {
-  const [events, setEvents] = useState<SyncEvent[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!isOpen) return;
-    let cancelled = false;
-
-    const load = async (retry = false) => {
-      setLoading(true);
-      setError(null);
-      try {
-        const auth = getAuth();
-        const token = await auth.currentUser?.getIdToken(retry);
-        const res = await fetch('/api/sync/history', {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
-        if (!cancelled) {
-          if (res.status === 401 && !retry) { load(true); return; }
-          if (!res.ok) { setError(`Failed to load history (${res.status})`); return; }
-          const data = await res.json();
-          setEvents(data.events ?? []);
-        }
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Error');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    };
-
-    load();
-    return () => { cancelled = true; };
-  }, [isOpen]);
-
+export default function SyncHistoryDrawer({ isOpen, onClose, loading, events, error, onRetry }: SyncHistoryDrawerProps) {
   if (!isOpen) return null;
 
   return (
@@ -93,9 +61,15 @@ export default function SyncHistoryDrawer({ isOpen, onClose }: SyncHistoryDrawer
             </div>
           )}
           {error && (
-            <div className="flex items-center gap-2 text-sm text-red-500">
-              <AlertCircle className="w-4 h-4" />
-              {error}
+            <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-400">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              <span className="flex-1">{error}</span>
+              <button
+                onClick={onRetry}
+                className="text-xs text-red-700 dark:text-red-400 underline whitespace-nowrap"
+              >
+                Retry
+              </button>
             </div>
           )}
           {!loading && !error && events.length === 0 && (

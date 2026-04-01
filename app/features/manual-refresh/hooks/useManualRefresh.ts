@@ -68,13 +68,23 @@ function makeInitialNetworkStates(): NetworkSyncState[] {
   }));
 }
 
+type StatusNetworkPayload = {
+  networkId: NetworkId;
+  lastSyncedAt: string | null;
+  lastSyncStatus: SyncStatus;
+  lastSyncError?: string | null;
+};
+
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useManualRefresh() {
   const router = useRouter();
   const [networkStates, setNetworkStates] = useState<NetworkSyncState[]>(makeInitialNetworkStates());
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [initLoadError, setInitLoadError] = useState<string | null>(null);
+  const [pollingStale, setPollingStale] = useState(false);
   const [triggeredNetworks, setTriggeredNetworks] = useState<Set<NetworkId>>(new Set());
+  const [triggerError, setTriggerError] = useState<string | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
 
@@ -86,11 +96,13 @@ export function useManualRefresh() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyData, setHistoryData] = useState<SyncHistoryEvent[]>([]);
+  const [historyError, setHistoryError] = useState<string | null>(null);
 
   // Polling refs
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const pollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const triggeredRef = useRef<Set<NetworkId>>(new Set());
+  const consecutivePollFailuresRef = useRef(0);
 
   // Rate limit countdown intervals
   const allRateLimitTimer = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -113,7 +125,6 @@ export function useManualRefresh() {
    * Handle 401: try a silent force-refresh first.
    * If the refresh gives us a new token, retry the original request.
    * If refresh fails, mark session expired (triggers redirect).
-   * Returns the retried Response on success, null if session truly expired.
    */
   const retryAfter401 = useCallback(async (
     path: string,
@@ -143,7 +154,39 @@ export function useManualRefresh() {
     if (status === 401) setSessionExpired(true);
   }, []);
 
-  // ─── Fetch status ──────────────────────────────────────────────────────────
+  // ─── Shared state update from status response ────────────────────────────
+
+  const applyStatusResponse = useCallback((statuses: StatusNetworkPayload[]) => {
+    setNetworkStates(prev => prev.map(n => {
+      const found = statuses.find(s => s.networkId === n.networkId);
+      if (!found) return n;
+      return {
+        ...n,
+        lastSyncedAt: found.lastSyncedAt ? new Date(found.lastSyncedAt) : null,
+        lastSyncStatus: found.lastSyncStatus,
+        lastSyncError: sanitizeErrorMessage(found.lastSyncError ?? null),
+      };
+    }));
+
+    if (triggeredRef.current.size > 0) {
+      setTriggeredNetworks(prev => {
+        const next = new Set(prev);
+        statuses.forEach(s => {
+          if (TERMINAL_STATUSES.includes(s.lastSyncStatus) && s.lastSyncStatus !== 'never') {
+            next.delete(s.networkId as NetworkId);
+          }
+        });
+        return next;
+      });
+    }
+  }, []);
+
+  // ─── Polling fetch (tracks consecutive failures → pollingStale) ──────────
+
+  const stopPolling = useCallback(() => {
+    if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
+    if (pollTimeoutRef.current) { clearTimeout(pollTimeoutRef.current); pollTimeoutRef.current = null; }
+  }, []);
 
   const fetchStatus = useCallback(async () => {
     try {
@@ -155,62 +198,96 @@ export function useManualRefresh() {
         res = retried;
       }
 
-      if (!res.ok) { handleResponseStatus(res.status); return; }
-
-      const data = await res.json();
-      const statuses: Array<{
-        networkId: NetworkId;
-        lastSyncedAt: string | null;
-        lastSyncStatus: SyncStatus;
-        lastSyncError?: string | null;
-      }> = data.networks ?? [];
-
-      setNetworkStates(prev => prev.map(n => {
-        const found = statuses.find(s => s.networkId === n.networkId);
-        if (!found) return n;
-        return {
-          ...n,
-          lastSyncedAt: found.lastSyncedAt ? new Date(found.lastSyncedAt) : null,
-          lastSyncStatus: found.lastSyncStatus,
-          lastSyncError: sanitizeErrorMessage(found.lastSyncError ?? null),
-        };
-      }));
-
-      // Remove terminal networks from triggered set
-      if (triggeredRef.current.size > 0) {
-        setTriggeredNetworks(prev => {
-          const next = new Set(prev);
-          statuses.forEach(s => {
-            if (TERMINAL_STATUSES.includes(s.lastSyncStatus) && s.lastSyncStatus !== 'never') {
-              next.delete(s.networkId as NetworkId);
-            }
-          });
-          return next;
-        });
+      if (!res.ok) {
+        handleResponseStatus(res.status);
+        consecutivePollFailuresRef.current += 1;
+        if (consecutivePollFailuresRef.current >= 3) {
+          stopPolling();
+          setPollingStale(true);
+        }
+        return;
       }
-    } catch {
-      // Silently ignore polling errors
-    }
-  }, [retryAfter401, handleResponseStatus]);
 
-  // ─── Initial load ──────────────────────────────────────────────────────────
+      // Success — reset failure counter
+      consecutivePollFailuresRef.current = 0;
+      setPollingStale(false);
+      const data = await res.json();
+      applyStatusResponse(data.networks ?? []);
+
+    } catch {
+      // Network error during poll
+      consecutivePollFailuresRef.current += 1;
+      if (consecutivePollFailuresRef.current >= 3) {
+        stopPolling();
+        setPollingStale(true);
+      }
+    }
+  }, [retryAfter401, handleResponseStatus, stopPolling, applyStatusResponse]);
+
+  // ─── Initial load with network-error backoff (2s, 4s, 8s) ───────────────
+
+  const fetchStatusInitial = useCallback(async (): Promise<boolean> => {
+    const DELAYS = [2000, 4000, 8000];
+
+    const attempt = async (): Promise<'success' | 'network_error' | 'auth_error' | 'server_error'> => {
+      try {
+        let res = await authFetch('/api/scheduled/sync-status');
+        if (res.status === 401) {
+          const retried = await retryAfter401('/api/scheduled/sync-status');
+          if (!retried) return 'auth_error';
+          res = retried;
+        }
+        if (res.status === 403) { setAccessDenied(true); return 'auth_error'; }
+        if (!res.ok) return 'server_error';
+        const data = await res.json();
+        applyStatusResponse(data.networks ?? []);
+        setInitLoadError(null);
+        return 'success';
+      } catch {
+        return 'network_error';
+      }
+    };
+
+    let result = await attempt();
+    if (result === 'success') return true;
+    if (result === 'server_error') { setInitLoadError('Unable to load sync status'); return false; }
+    if (result === 'auth_error') return false;
+
+    // Network errors: retry with backoff
+    for (let i = 0; i < DELAYS.length; i++) {
+      setInitLoadError('No internet connection — retrying…');
+      await new Promise(r => setTimeout(r, DELAYS[i]));
+      result = await attempt();
+      if (result === 'success') return true;
+      if (result !== 'network_error') {
+        if (result === 'server_error') setInitLoadError('Unable to load sync status');
+        return false;
+      }
+    }
+
+    setInitLoadError('No internet connection. Please check your network and try again.');
+    return false;
+  }, [retryAfter401, applyStatusResponse]);
+
+  const retryInitialLoad = useCallback(() => {
+    setInitLoadError(null);
+    setIsInitialLoading(true);
+    fetchStatusInitial().finally(() => setIsInitialLoading(false));
+  }, [fetchStatusInitial]);
+
+  // ─── Initial load ────────────────────────────────────────────────────────
 
   useEffect(() => {
-    fetchStatus().finally(() => setIsInitialLoading(false));
-  }, [fetchStatus]);
+    fetchStatusInitial().finally(() => setIsInitialLoading(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ─── Polling control ───────────────────────────────────────────────────────
-
-  const stopPolling = useCallback(() => {
-    if (pollIntervalRef.current) { clearInterval(pollIntervalRef.current); pollIntervalRef.current = null; }
-    if (pollTimeoutRef.current) { clearTimeout(pollTimeoutRef.current); pollTimeoutRef.current = null; }
-  }, []);
+  // ─── Polling control ─────────────────────────────────────────────────────
 
   const startPolling = useCallback(() => {
     stopPolling();
+    consecutivePollFailuresRef.current = 0;
     pollIntervalRef.current = setInterval(async () => {
       await fetchStatus();
-      // Stop if all triggered networks reached terminal status
       if (triggeredRef.current.size === 0) {
         stopPolling();
       }
@@ -219,7 +296,6 @@ export function useManualRefresh() {
     // Max 60s cap
     pollTimeoutRef.current = setTimeout(() => {
       stopPolling();
-      // Mark any still-in-progress as failed after timeout
       setNetworkStates(prev => prev.map(n =>
         triggeredRef.current.has(n.networkId) ? { ...n, lastSyncStatus: 'failed' as SyncStatus } : n
       ));
@@ -236,7 +312,7 @@ export function useManualRefresh() {
     }
   }, [triggeredNetworks, startPolling, stopPolling]);
 
-  // ─── Cleanup on unmount ────────────────────────────────────────────────────
+  // ─── Cleanup on unmount ──────────────────────────────────────────────────
 
   useEffect(() => {
     return () => {
@@ -246,7 +322,7 @@ export function useManualRefresh() {
     };
   }, [stopPolling]);
 
-  // ─── Rate limit helpers ────────────────────────────────────────────────────
+  // ─── Rate limit helpers ──────────────────────────────────────────────────
 
   const startAllRateLimitCountdown = (seconds: number) => {
     if (allRateLimitTimer.current) clearInterval(allRateLimitTimer.current);
@@ -284,37 +360,73 @@ export function useManualRefresh() {
     }, 1000);
   };
 
-  // ─── Trigger actions ───────────────────────────────────────────────────────
+  // ─── Trigger helpers: parse POST response for per-network failures ────────
+
+  type TriggerResponseBody = {
+    triggered?: NetworkId[];
+    failed?: Array<{ networkId: NetworkId; errorMessage?: string }>;
+  };
+
+  const applyTriggerResponse = (body: TriggerResponseBody, targetNetworks: NetworkId[]) => {
+    const failedMap = new Map<NetworkId, string>(
+      (body.failed ?? []).map(f => [f.networkId, sanitizeErrorMessage(f.errorMessage ?? 'Sync failed') ?? 'Sync failed'])
+    );
+    const failedIds = new Set(failedMap.keys());
+    const successIds = targetNetworks.filter(id => !failedIds.has(id));
+
+    // Update network states
+    setNetworkStates(prev => prev.map(n => {
+      if (failedIds.has(n.networkId)) {
+        return { ...n, lastSyncStatus: 'failed' as SyncStatus, lastSyncError: failedMap.get(n.networkId) ?? 'Sync failed' };
+      }
+      if (successIds.includes(n.networkId)) {
+        return { ...n, lastSyncStatus: 'in_progress' as SyncStatus, lastSyncError: null };
+      }
+      return n;
+    }));
+
+    // Only track non-failed networks for polling
+    if (successIds.length > 0) {
+      setTriggeredNetworks(prev => new Set([...prev, ...successIds]));
+    }
+  };
+
+  // ─── Trigger actions ─────────────────────────────────────────────────────
 
   const triggerAll = useCallback(async () => {
     if (allRateLimit !== null) return;
-    // Don't re-trigger networks already in progress
-    const alreadyRunning = Array.from(triggeredNetworks);
-    if (alreadyRunning.length === SUPPORTED_NETWORKS.length) return;
+    if (triggeredNetworks.size === SUPPORTED_NETWORKS.length) return;
 
     const path = '/api/sync/manual';
     const init: RequestInit = { method: 'POST', body: JSON.stringify({}) };
-    let res = await authFetch(path, init);
 
-    if (res.status === 401) {
-      const retried = await retryAfter401(path, init);
-      if (!retried) return;
-      res = retried;
+    try {
+      let res = await authFetch(path, init);
+
+      if (res.status === 401) {
+        const retried = await retryAfter401(path, init);
+        if (!retried) return;
+        res = retried;
+      }
+
+      if (res.status === 429) {
+        const retryAfter = parseInt(res.headers.get('Retry-After') ?? '60', 10);
+        startAllRateLimitCountdown(isNaN(retryAfter) ? 60 : retryAfter);
+        return;
+      }
+      if (!res.ok) {
+        handleResponseStatus(res.status);
+        if (res.status !== 403) {
+          setTriggerError('Sync failed to start — please try again');
+        }
+        return;
+      }
+
+      const body: TriggerResponseBody = await res.json().catch(() => ({}));
+      applyTriggerResponse(body, SUPPORTED_NETWORKS as unknown as NetworkId[]);
+    } catch {
+      setTriggerError('No internet connection. Please check your network and try again.');
     }
-
-    if (res.status === 429) {
-      const retryAfter = parseInt(res.headers.get('Retry-After') ?? '60', 10);
-      startAllRateLimitCountdown(isNaN(retryAfter) ? 60 : retryAfter);
-      return;
-    }
-    if (!res.ok) { handleResponseStatus(res.status); return; }
-
-    setNetworkStates(prev => prev.map(n => ({
-      ...n,
-      lastSyncStatus: 'in_progress' as SyncStatus,
-      lastSyncError: null,
-    })));
-    setTriggeredNetworks(new Set(SUPPORTED_NETWORKS as unknown as NetworkId[]));
   }, [allRateLimit, triggeredNetworks, retryAfter401, handleResponseStatus]);
 
   const triggerNetwork = useCallback(async (networkId: NetworkId) => {
@@ -323,34 +435,42 @@ export function useManualRefresh() {
 
     const path = '/api/sync/manual';
     const init: RequestInit = { method: 'POST', body: JSON.stringify({ networkId }) };
-    let res = await authFetch(path, init);
 
-    if (res.status === 401) {
-      const retried = await retryAfter401(path, init);
-      if (!retried) return;
-      res = retried;
+    try {
+      let res = await authFetch(path, init);
+
+      if (res.status === 401) {
+        const retried = await retryAfter401(path, init);
+        if (!retried) return;
+        res = retried;
+      }
+
+      if (res.status === 429) {
+        const retryAfter = parseInt(res.headers.get('Retry-After') ?? '60', 10);
+        startNetworkRateLimitCountdown(networkId, isNaN(retryAfter) ? 60 : retryAfter);
+        return;
+      }
+      if (!res.ok) {
+        handleResponseStatus(res.status);
+        if (res.status !== 403) {
+          setTriggerError('Sync failed to start — please try again');
+        }
+        return;
+      }
+
+      const body: TriggerResponseBody = await res.json().catch(() => ({}));
+      applyTriggerResponse(body, [networkId]);
+    } catch {
+      setTriggerError('No internet connection. Please check your network and try again.');
     }
-
-    if (res.status === 429) {
-      const retryAfter = parseInt(res.headers.get('Retry-After') ?? '60', 10);
-      startNetworkRateLimitCountdown(networkId, isNaN(retryAfter) ? 60 : retryAfter);
-      return;
-    }
-    if (!res.ok) { handleResponseStatus(res.status); return; }
-
-    setNetworkStates(prev => prev.map(n =>
-      n.networkId === networkId
-        ? { ...n, lastSyncStatus: 'in_progress' as SyncStatus, lastSyncError: null }
-        : n
-    ));
-    setTriggeredNetworks(prev => new Set([...prev, networkId]));
   }, [networkRateLimits, triggeredNetworks, retryAfter401, handleResponseStatus]);
 
-  // ─── History ───────────────────────────────────────────────────────────────
+  // ─── History ─────────────────────────────────────────────────────────────
 
   const openHistory = useCallback(async () => {
     setHistoryOpen(true);
     setHistoryLoading(true);
+    setHistoryError(null);
     try {
       let res = await authFetch('/api/scheduled/sync-history');
       if (res.status === 401) {
@@ -358,24 +478,39 @@ export function useManualRefresh() {
         if (!retried) { setHistoryLoading(false); return; }
         res = retried;
       }
-      if (!res.ok) { handleResponseStatus(res.status); return; }
+      if (!res.ok) {
+        setHistoryError('Unable to load history — try again');
+        return;
+      }
       const data = await res.json();
       setHistoryData(data?.history ?? data?.events ?? []);
+    } catch {
+      setHistoryError('Unable to load history — try again');
     } finally {
       setHistoryLoading(false);
     }
-  }, [retryAfter401, handleResponseStatus]);
+  }, [retryAfter401]);
 
   const closeHistory = useCallback(() => {
     setHistoryOpen(false);
+    setHistoryError(null);
   }, []);
 
-  // ─── Return ────────────────────────────────────────────────────────────────
+  const retryHistory = useCallback(() => {
+    openHistory();
+  }, [openHistory]);
+
+  // ─── Return ──────────────────────────────────────────────────────────────
 
   return {
     networkStates,
     isInitialLoading,
+    initLoadError,
+    pollingStale,
+    retryInitialLoad,
     triggeredNetworks,
+    triggerError,
+    dismissTriggerError: () => setTriggerError(null),
     allRateLimit,
     networkRateLimits,
     triggerAll,
@@ -383,8 +518,10 @@ export function useManualRefresh() {
     historyOpen,
     historyLoading,
     historyData,
+    historyError,
     openHistory,
     closeHistory,
+    retryHistory,
     sessionExpired,
     accessDenied,
   };

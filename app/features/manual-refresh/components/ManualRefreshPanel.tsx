@@ -2,25 +2,40 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Loader2, RefreshCw, ShieldAlert } from 'lucide-react';
+import { Loader2, RefreshCw, ShieldAlert, AlertTriangle, AlertCircle } from 'lucide-react';
 import { SUPPORTED_NETWORKS } from '@/lib/constants';
 import NetworkSyncRow from './NetworkSyncRow';
 import SyncHistoryDrawer from './SyncHistoryDrawer';
 import { useManualRefresh } from '../hooks/useManualRefresh';
 import { Toast } from '@/components/ui/Toast';
 
+function formatCountdown(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return m > 0 ? `${m}m ${s}s` : `${s}s`;
+}
+
 export default function ManualRefreshPanel() {
   const {
     networkStates,
     isInitialLoading,
+    initLoadError,
+    pollingStale,
+    retryInitialLoad,
     triggeredNetworks,
+    triggerError,
+    dismissTriggerError,
     allRateLimit,
     networkRateLimits,
     triggerAll,
     triggerNetwork,
     historyOpen,
+    historyLoading,
+    historyData,
+    historyError,
     openHistory,
     closeHistory,
+    retryHistory,
     sessionExpired,
     accessDenied,
   } = useManualRefresh();
@@ -28,7 +43,7 @@ export default function ManualRefreshPanel() {
   const [confirmingAll, setConfirmingAll] = useState(false);
   const [syncingAll, setSyncingAll] = useState(false);
 
-  const noNetworks = !isInitialLoading && networkStates.every(n => n.lastSyncStatus === 'never');
+  const noNetworks = !isInitialLoading && !initLoadError && networkStates.every(n => n.lastSyncStatus === 'never');
 
   if (noNetworks) {
     return (
@@ -52,6 +67,15 @@ export default function ManualRefreshPanel() {
   return (
     <>
     {sessionExpired && <Toast message="Session expired. Please sign in again." variant="error" />}
+    {triggerError && (
+      <Toast
+        key={triggerError}
+        message={triggerError}
+        variant="error"
+        durationMs={5000}
+        onClose={dismissTriggerError}
+      />
+    )}
     {accessDenied && (
       <div className="flex items-center gap-2 p-3 mb-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-700 dark:text-red-400">
         <ShieldAlert className="w-4 h-4 flex-shrink-0" />
@@ -66,6 +90,30 @@ export default function ManualRefreshPanel() {
           View Sync History
         </button>
       </div>
+
+      {/* Initial load error */}
+      {initLoadError && !isInitialLoading && (
+        <div className="flex items-center gap-2 p-3 mb-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-sm text-red-700 dark:text-red-400">
+          <AlertTriangle className="w-4 h-4 flex-shrink-0" />
+          <span className="flex-1">{initLoadError}</span>
+          <button
+            onClick={retryInitialLoad}
+            className="text-xs text-red-700 dark:text-red-400 underline whitespace-nowrap"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {/* Polling stale warning */}
+      {pollingStale && (
+        <div className="flex items-center gap-2 px-3 py-2 mb-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg text-xs text-amber-700 dark:text-amber-400">
+          <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+          <span className="flex-1">Status may be outdated —{' '}
+            <button onClick={retryInitialLoad} className="underline">click to refresh</button>
+          </span>
+        </div>
+      )}
 
       {/* Refresh All */}
       <div className="relative mb-4">
@@ -82,7 +130,7 @@ export default function ManualRefreshPanel() {
           {syncingAll
             ? 'Syncing…'
             : allRateLimit !== null
-            ? `Available in ${allRateLimit.countdown}s`
+            ? `Available in ${formatCountdown(allRateLimit.countdown)}`
             : confirmingAll
             ? 'Confirm Sync All'
             : 'Refresh All Data Now'}
@@ -116,6 +164,7 @@ export default function ManualRefreshPanel() {
                 networkId={n.networkId}
                 lastSyncedAt={n.lastSyncedAt}
                 lastSyncStatus={n.lastSyncStatus}
+                lastSyncError={n.lastSyncError}
                 isRefreshing={triggeredNetworks.has(n.networkId)}
                 rateLimitCountdown={networkRateLimits[n.networkId]?.countdown ?? null}
                 onRefresh={() => triggerNetwork(n.networkId)}
@@ -123,7 +172,14 @@ export default function ManualRefreshPanel() {
             ))}
       </div>
 
-      <SyncHistoryDrawer isOpen={historyOpen} onClose={closeHistory} />
+      <SyncHistoryDrawer
+        isOpen={historyOpen}
+        onClose={closeHistory}
+        loading={historyLoading}
+        events={historyData}
+        error={historyError}
+        onRetry={retryHistory}
+      />
     </div>
     </>
   );
