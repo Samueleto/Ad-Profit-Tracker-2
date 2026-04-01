@@ -31,7 +31,7 @@ function checkLimit(
 
 const SENSITIVE_KEY_RE = /key|token|secret|password/i;
 
-export function sanitizeMetadata(obj: unknown): unknown {
+function sanitizeMetadata(obj: unknown): unknown {
   if (obj === null || typeof obj !== "object" || Array.isArray(obj)) return obj;
   const result: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {

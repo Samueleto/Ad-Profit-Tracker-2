@@ -198,7 +198,7 @@ export function useApiExplorer() {
   const testConnection = useCallback(async (networkId: NetworkId) => {
     setRawStates(prev => ({ ...prev, [networkId]: { ...prev[networkId], testing: true, testResult: null } }));
     try {
-      const result = await fetchWithAuth('/api/networks/config/test-connection', false);
+      const result = await fetchWithAuth('/api/networks/config/test-connection');
       setRawStates(prev => ({ ...prev, [networkId]: { ...prev[networkId], testing: false, testResult: result } }));
     } catch (err) {
       setRawStates(prev => ({ ...prev, [networkId]: { ...prev[networkId], testing: false, testResult: { error: err instanceof Error ? err.message : 'Test failed.' } } }));
