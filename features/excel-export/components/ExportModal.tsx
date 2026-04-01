@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, ChevronDown, Loader2, CheckCircle, AlertTriangle } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
+import { toast } from 'sonner';
 import { useDateRangeStore } from '@/store/dateRangeStore';
 import { EXPORT_SHEET_KEYS, type ExportSheetKey, type ExportPreviewResponse } from '../types';
 import PdfExportTab from '@/features/pdf-export/components/PdfExportTab';
@@ -24,6 +25,7 @@ interface ExportModalProps {
 }
 
 type TabOption = 'excel' | 'pdf';
+type ExportErrorType = 403 | 404 | 429 | 500 | null;
 
 export default function ExportModal({ onClose }: ExportModalProps) {
   const router = useRouter();
@@ -32,14 +34,14 @@ export default function ExportModal({ onClose }: ExportModalProps) {
   const [activeTab, setActiveTab] = useState<TabOption>('excel');
   const [selectedSheets, setSelectedSheets] = useState<Set<ExportSheetKey>>(new Set(EXPORT_SHEET_KEYS));
   const [preview, setPreview] = useState<ExportPreviewResponse | null>(null);
+  const [previewFailed, setPreviewFailed] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(true);
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [filename, setFilename] = useState('');
   const [includeHeaders, setIncludeHeaders] = useState(true);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
-  const [errorType, setErrorType] = useState<number | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
+  const [errorType, setErrorType] = useState<ExportErrorType>(null);
 
   const anchorRef = useRef<HTMLAnchorElement>(null);
 
@@ -60,6 +62,7 @@ export default function ExportModal({ onClose }: ExportModalProps) {
   useEffect(() => {
     const fetchPreview = async () => {
       setPreviewLoading(true);
+      setPreviewFailed(false);
       try {
         const token = await getToken();
         const res = await fetch(`/api/export/preview?from=${fromDate}&to=${toDate}`, {
@@ -70,6 +73,7 @@ export default function ExportModal({ onClose }: ExportModalProps) {
         setPreview(data);
       } catch {
         setPreview(null);
+        setPreviewFailed(true);
       } finally {
         setPreviewLoading(false);
       }
@@ -98,13 +102,23 @@ export default function ExportModal({ onClose }: ExportModalProps) {
     setFilename(val);
   };
 
-  const allSelectedHaveNoData = preview != null && selectedSheets.size > 0 &&
-    [...selectedSheets].every(k => (preview.sheets[k] ?? 0) === 0);
+  // Only disable for no-data when preview definitively says hasData === false (not on preview failure)
+  const noDataDefinitive = preview !== null && preview.hasData === false;
+  const noDataFromPost = errorType === 404;
 
-  const exportDisabled = exporting || selectedSheets.size === 0 || !preview?.hasData || allSelectedHaveNoData;
-  const exportTooltip = !preview?.hasData ? 'No data available for this range'
-    : selectedSheets.size === 0 ? 'Select at least one sheet'
-    : undefined;
+  const exportDisabled =
+    exporting ||
+    selectedSheets.size === 0 ||
+    noDataDefinitive ||
+    noDataFromPost ||
+    errorType === 429;
+
+  const exportTooltip =
+    noDataDefinitive || noDataFromPost
+      ? 'No data found for this date range'
+      : selectedSheets.size === 0
+      ? 'Select at least one sheet to export'
+      : undefined;
 
   const handleExport = async () => {
     setExporting(true);
@@ -129,7 +143,15 @@ export default function ExportModal({ onClose }: ExportModalProps) {
           body: JSON.stringify(payload),
         });
 
-      let res = await doFetch(token);
+      let res: Response;
+      try {
+        res = await doFetch(token);
+      } catch {
+        // Network failure — treat same as 500
+        setErrorType(500);
+        setExportError('Something went wrong generating your file.');
+        return;
+      }
 
       if (res.status === 401) {
         try {
@@ -137,11 +159,17 @@ export default function ExportModal({ onClose }: ExportModalProps) {
           res = await doFetch(token);
           if (res.status === 401) {
             onClose();
+            toast.error('Session expired');
             router.push('/');
             return;
           }
+          // Refresh succeeded — show toast and let user retry
+          onClose();
+          toast.success('Session refreshed, please try again');
+          return;
         } catch {
           onClose();
+          toast.error('Session expired');
           router.push('/');
           return;
         }
@@ -152,14 +180,22 @@ export default function ExportModal({ onClose }: ExportModalProps) {
         setExportError('Access Denied');
         return;
       }
+
       if (res.status === 404) {
         setErrorType(404);
         setExportError('No data found for this date range');
         return;
       }
+
+      if (res.status === 429) {
+        setErrorType(429);
+        setExportError('Export limit reached. You can export up to 10 files per hour. Please try again later.');
+        return;
+      }
+
       if (!res.ok) {
         setErrorType(500);
-        setExportError('Export failed. Please try again.');
+        setExportError('Something went wrong generating your file.');
         return;
       }
 
@@ -172,11 +208,16 @@ export default function ExportModal({ onClose }: ExportModalProps) {
         setTimeout(() => URL.revokeObjectURL(url), 5000);
       }
 
-      setToast('Export complete — file downloaded');
+      toast.success('Export complete — file downloaded');
       setTimeout(() => onClose(), 1500);
     } finally {
       setExporting(false);
     }
+  };
+
+  const dismissError = () => {
+    setExportError(null);
+    setErrorType(null);
   };
 
   return (
@@ -212,7 +253,7 @@ export default function ExportModal({ onClose }: ExportModalProps) {
         </div>
 
         <div className="overflow-y-auto flex-1 px-5 py-4 space-y-4">
-          {/* PDF tab — always mounted once activated so checkbox state persists on tab switch */}
+          {/* PDF tab */}
           <div className={activeTab !== 'pdf' ? 'hidden' : ''}>
             <PdfExportTab
               dateFrom={fromDate}
@@ -275,13 +316,17 @@ export default function ExportModal({ onClose }: ExportModalProps) {
                               />
                               <span className="text-xs text-gray-700 dark:text-gray-300">{SHEET_LABELS[key]}</span>
                             </div>
-                            <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
-                              rowCount === 0
-                                ? 'bg-gray-100 dark:bg-gray-700 text-gray-400'
-                                : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
-                            }`}>
-                              {rowCount.toLocaleString()}
-                            </span>
+                            {previewFailed ? (
+                              <span className="text-xs text-gray-400 italic">Row counts unavailable</span>
+                            ) : (
+                              <span className={`text-xs px-1.5 py-0.5 rounded-full font-medium ${
+                                rowCount === 0
+                                  ? 'bg-gray-100 dark:bg-gray-700 text-gray-400'
+                                  : 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400'
+                              }`}>
+                                {rowCount.toLocaleString()}
+                              </span>
+                            )}
                           </label>
                         );
                       })}
@@ -340,7 +385,7 @@ export default function ExportModal({ onClose }: ExportModalProps) {
               {exportError && errorType === 500 && (
                 <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg">
                   <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
-                  <div className="flex items-center gap-1 text-xs text-red-700 dark:text-red-300">
+                  <div className="flex items-center gap-1 text-xs text-red-700 dark:text-red-300 flex-1">
                     <span>{exportError}</span>
                     <button onClick={handleExport} className="underline hover:no-underline font-medium ml-1">
                       Retry
@@ -348,18 +393,24 @@ export default function ExportModal({ onClose }: ExportModalProps) {
                   </div>
                 </div>
               )}
+
               {exportError && errorType === 403 && (
                 <div className="flex items-center gap-2 px-3 py-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg">
-                  <AlertTriangle className="w-3.5 h-3.5 text-red-500" />
-                  <span className="text-xs text-red-700 dark:text-red-300">{exportError}</span>
+                  <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0" />
+                  <span className="text-xs text-red-700 dark:text-red-300 flex-1">{exportError}</span>
+                  <button onClick={onClose} className="text-red-400 hover:text-red-600 dark:hover:text-red-300">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               )}
 
-              {/* Toast */}
-              {toast && (
-                <div className="flex items-center gap-2 px-3 py-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg">
-                  <CheckCircle className="w-3.5 h-3.5 text-green-500" />
-                  <span className="text-xs text-green-700 dark:text-green-300">{toast}</span>
+              {exportError && errorType === 429 && (
+                <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 mt-0.5" />
+                  <span className="text-xs text-amber-700 dark:text-amber-300 flex-1">{exportError}</span>
+                  <button onClick={dismissError} className="text-amber-400 hover:text-amber-600 dark:hover:text-amber-300">
+                    <X className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               )}
             </>
