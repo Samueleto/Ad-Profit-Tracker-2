@@ -1,12 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import { Loader2, AlertTriangle } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Loader2, AlertTriangle, ShieldAlert } from 'lucide-react';
+import Link from 'next/link';
 import { usePreferences, type Preferences } from '../hooks/usePreferences';
 import { Toast } from '@/components/ui/Toast';
+import PreferencesSkeleton from './PreferencesSkeleton';
 
 interface PreferencesCardProps {
-  initialPreferences: Preferences;
+  initialPreferences: Preferences | null;
   isDefaults?: boolean;
 }
 
@@ -58,13 +60,31 @@ function Toggle({ checked, onChange, disabled, id }: {
   );
 }
 
-export default function PreferencesCard({ initialPreferences, isDefaults = false }: PreferencesCardProps) {
-  const { prefs, saveStatus, error, updatePreference, saveAll } = usePreferences(initialPreferences);
+export default function PreferencesCard({ initialPreferences, isDefaults: initialIsDefaults = false }: PreferencesCardProps) {
+  const {
+    prefs,
+    loadState,
+    isDefaults,
+    saveStatus,
+    fieldErrors,
+    toastMsg,
+    isRateLimited,
+    dismissToast,
+    updatePreference,
+    saveAll,
+    fetchPreferences,
+  } = usePreferences(initialPreferences, initialIsDefaults);
 
-  const [tzSearch, setTzSearch] = useState(initialPreferences.timezone);
+  const [tzSearch, setTzSearch] = useState(initialPreferences?.timezone ?? 'UTC');
   const [tzOpen, setTzOpen] = useState(false);
 
+  // Sync timezone search display when prefs load via client-side fetch
+  useEffect(() => {
+    if (loadState === 'loaded') setTzSearch(prefs.timezone);
+  }, [loadState]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const saving = saveStatus === 'saving';
+  const disabled = saving || isRateLimited;
 
   const filteredTimezones = ALL_TIMEZONES.filter(tz =>
     tz.toLowerCase().includes(tzSearch.toLowerCase())
@@ -75,6 +95,56 @@ export default function PreferencesCard({ initialPreferences, isDefaults = false
     setTzOpen(false);
     updatePreference('timezone', tz);
   };
+
+  // ─── Loading state ────────────────────────────────────────────────────────
+
+  if (loadState === 'loading') {
+    return <PreferencesSkeleton />;
+  }
+
+  // ─── 403 Access Denied ────────────────────────────────────────────────────
+
+  if (loadState === 'error_403') {
+    return (
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
+        <h2 className="text-base font-semibold text-gray-900 dark:text-white mb-1">General Preferences</h2>
+        <hr className="border-gray-200 dark:border-gray-700 mb-5" />
+        <div className="flex items-center gap-3 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+          <ShieldAlert className="w-5 h-5 text-red-500 flex-shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-medium text-red-700 dark:text-red-400">Access Denied</p>
+            <p className="text-xs text-red-600 dark:text-red-500 mt-0.5">You don&apos;t have permission to manage preferences.</p>
+          </div>
+          <Link href="/dashboard" className="text-xs text-blue-600 dark:text-blue-400 underline whitespace-nowrap">
+            Go to Dashboard
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── 500 / Network error on GET ───────────────────────────────────────────
+
+  if (loadState === 'error_500') {
+    return (
+      <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
+        <h2 className="text-base font-semibold text-gray-900 dark:text-white mb-1">General Preferences</h2>
+        <hr className="border-gray-200 dark:border-gray-700 mb-5" />
+        <div className="flex items-center gap-3 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+          <AlertTriangle className="w-4 h-4 text-red-500 flex-shrink-0" />
+          <span className="text-sm text-red-700 dark:text-red-400 flex-1">Failed to load preferences.</span>
+          <button
+            onClick={fetchPreferences}
+            className="text-xs text-red-700 dark:text-red-400 underline whitespace-nowrap"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // ─── Loaded ───────────────────────────────────────────────────────────────
 
   return (
     <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-6">
@@ -87,16 +157,15 @@ export default function PreferencesCard({ initialPreferences, isDefaults = false
       </div>
       <hr className="border-gray-200 dark:border-gray-700 mb-5" />
 
-      {/* Error banner */}
-      {saveStatus === 'error' && error && (
+      {/* General 400 validation error (not field-specific) */}
+      {fieldErrors['_general'] && (
         <div className="mb-4 flex items-center gap-2 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-700 dark:text-amber-400">
           <AlertTriangle className="w-4 h-4 flex-shrink-0" />
-          {error}
-          <button onClick={saveAll} className="ml-auto text-xs underline">Retry</button>
+          {fieldErrors['_general']}
         </div>
       )}
 
-      {/* Success toast (fixed-position) */}
+      {/* Success toast */}
       {saveStatus === 'success' && (
         <Toast message="Preferences saved" variant="success" />
       )}
@@ -112,9 +181,11 @@ export default function PreferencesCard({ initialPreferences, isDefaults = false
               onChange={e => { setTzSearch(e.target.value); setTzOpen(true); updatePreference('timezone', e.target.value); }}
               onFocus={() => setTzOpen(true)}
               onBlur={() => setTimeout(() => setTzOpen(false), 150)}
-              disabled={saving}
+              disabled={disabled}
               placeholder="Search timezones…"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50"
+              className={`w-full px-3 py-2 border rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50 ${
+                fieldErrors['timezone'] ? 'border-red-400 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'
+              }`}
             />
             {tzOpen && filteredTimezones.length > 0 && (
               <ul className="absolute z-20 mt-1 w-full max-h-48 overflow-auto bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg text-sm">
@@ -132,6 +203,9 @@ export default function PreferencesCard({ initialPreferences, isDefaults = false
               </ul>
             )}
           </div>
+          {fieldErrors['timezone'] && (
+            <p className="mt-1 text-xs text-red-500 dark:text-red-400">{fieldErrors['timezone']}</p>
+          )}
         </div>
 
         {/* Currency */}
@@ -140,11 +214,14 @@ export default function PreferencesCard({ initialPreferences, isDefaults = false
           <select
             value={prefs.currency}
             onChange={e => updatePreference('currency', e.target.value)}
-            disabled={saving}
+            disabled={disabled}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50"
           >
             {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
           </select>
+          {fieldErrors['currency'] && (
+            <p className="mt-1 text-xs text-red-500 dark:text-red-400">{fieldErrors['currency']}</p>
+          )}
         </div>
 
         {/* Default date range */}
@@ -153,11 +230,14 @@ export default function PreferencesCard({ initialPreferences, isDefaults = false
           <select
             value={prefs.defaultDateRange}
             onChange={e => updatePreference('defaultDateRange', e.target.value as Preferences['defaultDateRange'])}
-            disabled={saving}
+            disabled={disabled}
             className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50"
           >
             {DATE_RANGE_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
+          {fieldErrors['defaultDateRange'] && (
+            <p className="mt-1 text-xs text-red-500 dark:text-red-400">{fieldErrors['defaultDateRange']}</p>
+          )}
         </div>
 
         {/* Notifications */}
@@ -171,7 +251,7 @@ export default function PreferencesCard({ initialPreferences, isDefaults = false
               id="toggle-daily"
               checked={prefs.notifications.dailySummaryEmail}
               onChange={v => updatePreference('notifications', { ...prefs.notifications, dailySummaryEmail: v })}
-              disabled={saving}
+              disabled={disabled}
             />
           </div>
           <div className="flex items-center justify-between">
@@ -182,7 +262,7 @@ export default function PreferencesCard({ initialPreferences, isDefaults = false
               id="toggle-weekly"
               checked={prefs.notifications.weeklyReportEmail}
               onChange={v => updatePreference('notifications', { ...prefs.notifications, weeklyReportEmail: v })}
-              disabled={saving}
+              disabled={disabled}
             />
           </div>
         </div>
@@ -190,13 +270,24 @@ export default function PreferencesCard({ initialPreferences, isDefaults = false
         {/* Save all button */}
         <button
           onClick={saveAll}
-          disabled={saving}
+          disabled={disabled}
           className="w-full flex items-center justify-center gap-2 py-2.5 px-4 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
         >
           {saving && <Loader2 className="w-4 h-4 animate-spin" />}
           Save Preferences
         </button>
       </div>
+
+      {/* Toast for non-field errors (network, 429, 500 on PATCH, session expired) */}
+      {toastMsg && (
+        <Toast
+          key={toastMsg}
+          message={toastMsg}
+          variant="error"
+          durationMs={5000}
+          onClose={dismissToast}
+        />
+      )}
     </div>
   );
 }

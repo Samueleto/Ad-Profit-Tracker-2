@@ -44,17 +44,17 @@ export default async function SettingsPage() {
     fetch(`${BASE_URL}/api/settings/preferences`, {
       cache: 'no-store',
       headers: authHeaders,
-    }).then(async (res): Promise<{ preferences: Preferences; isDefaults: boolean }> => {
-      // 401 or 404 are expected for unauthenticated / first-time users → use defaults
-      if (res.status === 401 || res.status === 404 || !res.ok) {
-        return { preferences: DEFAULT_PREFERENCES, isDefaults: true };
-      }
+    }).then(async (res): Promise<{ preferences: Preferences | null; isDefaults: boolean }> => {
+      // 404 = first-time user, silently use defaults
+      if (res.status === 404) return { preferences: DEFAULT_PREFERENCES, isDefaults: true };
+      // 401 / 5xx / any other error → pass null; PreferencesCard fetches client-side
+      if (!res.ok) return { preferences: null, isDefaults: false };
       const data = await res.json();
       return {
         preferences: data?.preferences ?? DEFAULT_PREFERENCES,
         isDefaults: !data?.preferences,
       };
-    }).catch(() => ({ preferences: DEFAULT_PREFERENCES, isDefaults: true })),
+    }).catch(() => ({ preferences: null, isDefaults: false })),
 
     // /api/keys/status is fetched with auth by ApiKeysSectionClient (client component).
     // We include a server-side attempt here purely for the parallel waterfall benefit —
