@@ -2,10 +2,17 @@ import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase-admin/admin";
 import type { HealthResponseOk, HealthResponseError } from "@/lib/deployment/types";
 
+const FIRESTORE_TIMEOUT_MS = 2000;
+
 export async function GET() {
   const start = Date.now();
   try {
-    await adminDb.collection("_health").limit(1).get();
+    await Promise.race([
+      adminDb.collection("_health").limit(1).get(),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Firestore health check timed out')), FIRESTORE_TIMEOUT_MS)
+      ),
+    ]);
     const firestoreLatencyMs = Date.now() - start;
 
     const mem = process.memoryUsage();

@@ -1,10 +1,20 @@
 import { NextResponse } from 'next/server';
 import { verifyAuthToken } from '@/lib/firebase-admin/verify-token';
+import { adminDb } from '@/lib/firebase-admin/admin';
 import type { DeploymentStatusResponse } from '@/lib/deployment/types';
 
 export async function GET(request: Request) {
   const authResult = await verifyAuthToken(request);
   if ('error' in authResult) return authResult.error;
+
+  const { uid } = authResult.token;
+
+  // Only owner and admin may view deployment status
+  const userDoc = await adminDb.collection('users').doc(uid).get();
+  const role = userDoc.data()?.workspaceRole;
+  if (!userDoc.exists || (role !== 'owner' && role !== 'admin')) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+  }
 
   try {
     const uptimeSeconds = Math.floor(process.uptime());
