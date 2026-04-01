@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { getAuth } from 'firebase/auth';
-import type { NetworkSyncState, ActivityFeedEntry, OverallHealth, LiveStateResponse } from '../types';
+import type { NetworkSyncState, ActivityFeedEntry, OverallHealth, LiveStateResponse } from '../types/index';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -28,6 +28,7 @@ export interface UseSyncStatusResult {
   activityFeed: ActivityFeedEntry[];
   criticalAnomalies: CriticalAnomaly[];
   isLoading: boolean;
+  isStale: boolean;
   error: SyncError | null;
   sessionExpired: boolean;
   pollingPaused: boolean;
@@ -39,8 +40,7 @@ export interface UseSyncStatusResult {
 
 async function getToken(): Promise<string | null> {
   try {
-    const auth = getAuth();
-    return await (auth.currentUser?.getIdToken() ?? Promise.resolve(null));
+    return await (getAuth().currentUser?.getIdToken() ?? Promise.resolve(null));
   } catch {
     return null;
   }
@@ -54,6 +54,7 @@ export function useSyncStatus(): UseSyncStatusResult {
   const [activityFeed, setActivityFeed] = useState<ActivityFeedEntry[]>([]);
   const [criticalAnomalies, setCriticalAnomalies] = useState<CriticalAnomaly[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isStale, setIsStale] = useState(false);
   const [error, setError] = useState<SyncError | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [pollingPaused, setPollingPaused] = useState(false);
@@ -65,6 +66,22 @@ export function useSyncStatus(): UseSyncStatusResult {
   const abortControllerRef = useRef<AbortController | null>(null);
   // Only fetch anomalies every 5th poll to reduce Firestore read costs
   const pollCountRef = useRef<number>(0);
+
+  // ─── Stale data detection ─────────────────────────────────────────────────
+
+  useEffect(() => {
+    const STALE_MS = 120_000; // 2 minutes
+    const check = () => {
+      if (lastPolledAt && !pollingPaused && !sessionExpired) {
+        setIsStale(Date.now() - lastPolledAt.getTime() > STALE_MS);
+      } else {
+        setIsStale(false);
+      }
+    };
+    check();
+    const t = setInterval(check, 30_000);
+    return () => clearInterval(t);
+  }, [lastPolledAt, pollingPaused, sessionExpired]);
 
   const stopPolling = useCallback(() => {
     if (pollIntervalRef.current) {
@@ -82,53 +99,57 @@ export function useSyncStatus(): UseSyncStatusResult {
     abortControllerRef.current = controller;
     const signal = controller.signal;
 
-    const token = await getToken();
-    if (!token) {
-      if (isMountedRef.current) {
-        setSessionExpired(true);
-        setError({ type: '401', message: 'Session expired. Please sign in again.' });
-        stopPolling();
-      }
-      return null;
-    }
-
-    const headers: Record<string, string> = { Authorization: `Bearer ${token}` };
+    const makeHeaders = (t: string | null): Record<string, string> =>
+      t ? { Authorization: `Bearer ${t}` } : {};
 
     try {
       pollCountRef.current += 1;
       const fetchAnomalies = pollCountRef.current % 5 === 1; // fetch on 1st, 6th, 11th… poll
 
+      let token = await getToken();
+
       // Parallel fetch: live-state, activity-feed, and anomalies (every 5th poll)
       const [liveRes, activityRes, anomaliesRes] = await Promise.all([
-        fetch('/api/sync/live-state', { headers, signal }),
-        fetch('/api/sync/activity-feed?limit=5', { headers, signal }),
+        fetch('/api/sync/live-state', { headers: makeHeaders(token), signal }),
+        fetch('/api/sync/activity-feed?limit=5', { headers: makeHeaders(token), signal }),
         fetchAnomalies
-          ? fetch('/api/reconciliation/anomalies', { headers, signal }).catch(() => null)
+          ? fetch('/api/reconciliation/anomalies', { headers: makeHeaders(token), signal }).catch(() => null)
           : Promise.resolve(null),
       ]);
 
       if (!isMountedRef.current) return null;
 
-      // Handle 401 / 403 / 500 from primary endpoint
+      // Handle 401: force-refresh token and retry live-state once
+      let resolvedLiveRes = liveRes;
       if (liveRes.status === 401) {
-        setSessionExpired(true);
-        setError({ type: '401', message: 'Session expired. Please sign in again.' });
-        stopPolling();
-        return null;
+        const freshToken = await getAuth().currentUser?.getIdToken(true).catch(() => null);
+        if (!freshToken) {
+          setSessionExpired(true);
+          stopPolling();
+          return null;
+        }
+        token = freshToken;
+        resolvedLiveRes = await fetch('/api/sync/live-state', { headers: makeHeaders(freshToken), signal });
+        if (resolvedLiveRes.status === 401) {
+          setSessionExpired(true);
+          stopPolling();
+          return null;
+        }
       }
-      if (liveRes.status === 403) {
+
+      if (resolvedLiveRes.status === 403) {
         setError({ type: '403', message: 'Access denied.' });
         stopPolling();
         return null;
       }
-      if (!liveRes.ok) {
-        setError({ type: '500', message: `Server error (${liveRes.status})` });
+      if (!resolvedLiveRes.ok) {
+        setError({ type: '500', message: 'Unable to load sync status' });
         setPollingPaused(true);
         stopPolling();
         return null;
       }
 
-      const liveData: LiveStateResponse = await liveRes.json();
+      const liveData: LiveStateResponse = await resolvedLiveRes.json();
       setNetworks(liveData.networks);
       setOverallHealth(liveData.overallHealth);
       setError(null);
@@ -147,14 +168,17 @@ export function useSyncStatus(): UseSyncStatusResult {
           (a: { severity: string }) => a.severity === 'critical'
         );
         setCriticalAnomalies(critical);
+      } else if (fetchAnomalies && anomaliesRes !== null) {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('[SyncStatus] Anomalies fetch failed; omitting CriticalAnomaliesStrip');
+        }
       }
-      // If anomalies failed, leave as empty array (already initialized)
 
       return liveData.networks;
     } catch (err) {
       if (!isMountedRef.current) return null;
       if (err instanceof Error && err.name === 'AbortError') return null;
-      setError({ type: 'network', message: 'Network error. Retrying…' });
+      setError({ type: 'network', message: 'Connection issue — retrying…' });
       // Keep polling on network errors
       return null;
     }
@@ -216,6 +240,7 @@ export function useSyncStatus(): UseSyncStatusResult {
     activityFeed,
     criticalAnomalies,
     isLoading,
+    isStale,
     error,
     sessionExpired,
     pollingPaused,

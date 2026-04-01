@@ -2,8 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, AlertCircle } from 'lucide-react';
-import type { NetworkSyncState } from '../types';
+import { ChevronDown, AlertCircle, ShieldAlert, Clock } from 'lucide-react';
+import Link from 'next/link';
+import type { NetworkSyncState } from '../types/index';
 import HealthBanner from './HealthBanner';
 import NetworkStatusCard from './NetworkStatusCard';
 import AnomalyAlertStrip from './AnomalyAlertStrip';
@@ -20,6 +21,7 @@ export default function SyncStatusPanel() {
     activityFeed,
     criticalAnomalies,
     isLoading,
+    isStale,
     error,
     sessionExpired,
     pollingPaused,
@@ -36,6 +38,8 @@ export default function SyncStatusPanel() {
     }
   }, [sessionExpired, router]);
 
+  // ─── Loading state ─────────────────────────────────────────────────────────
+
   if (isLoading) {
     return (
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-4 space-y-4">
@@ -49,26 +53,32 @@ export default function SyncStatusPanel() {
     );
   }
 
+  // ─── 403 Access Denied ─────────────────────────────────────────────────────
+
+  if (error?.type === '403') {
+    return (
+      <div className="flex items-center gap-2 p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-xl text-sm text-red-700 dark:text-red-400">
+        <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+        <span className="flex-1">Access Denied — you don&apos;t have permission to view sync status.</span>
+        <Link href="/dashboard" className="text-xs underline whitespace-nowrap">Go to Dashboard</Link>
+      </div>
+    );
+  }
+
+  // ─── Empty state ───────────────────────────────────────────────────────────
+
   const noNetworks = networks.length === 0 || networks.every(n => !n.isActive);
 
   if (noNetworks) {
     return (
       <div className="p-4 text-sm text-gray-500 dark:text-gray-400">
         No networks configured —{' '}
-        <a href="/settings" className="text-blue-600 underline">add API keys in Settings</a>.
+        <Link href="/settings" className="text-blue-600 underline">add API keys in Settings</Link>.
       </div>
     );
   }
 
-  // 403 Access Denied inline banner
-  if (error?.type === '403') {
-    return (
-      <div className="p-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-xl text-sm text-red-700 dark:text-red-400 flex items-center gap-2">
-        <AlertCircle className="w-4 h-4 flex-shrink-0" />
-        Access Denied: You don&apos;t have permission to view sync status.
-      </div>
-    );
-  }
+  // ─── Main panel ────────────────────────────────────────────────────────────
 
   return (
     <>
@@ -84,10 +94,18 @@ export default function SyncStatusPanel() {
             </p>
           )}
         </div>
-        <RefreshButton onRefresh={refresh} />
+        <div className="flex items-center gap-2">
+          {isStale && (
+            <span className="flex items-center gap-1 text-[11px] text-amber-600 dark:text-amber-400">
+              <Clock className="w-3 h-3" />
+              Data may be stale
+            </span>
+          )}
+          <RefreshButton onRefresh={refresh} />
+        </div>
       </div>
 
-      {/* Error banner */}
+      {/* Error banner (500 or network) */}
       {error && (
         <div className="flex items-center gap-2 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg text-xs text-red-700 dark:text-red-400">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
