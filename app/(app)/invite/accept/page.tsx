@@ -2,9 +2,9 @@
 
 import { useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { AlertCircle, CheckCircle } from 'lucide-react';
-import { getAuth } from 'firebase/auth';
+import { AlertCircle, CheckCircle, Loader2 } from 'lucide-react';
 import RoleBadge from '@/features/team/components/RoleBadge';
+import { authFetch, SessionExpiredError } from '@/lib/auth/teamAuthFetch';
 import type { WorkspaceRole } from '@/features/team/types';
 
 interface InvitationDetails {
@@ -14,20 +14,12 @@ interface InvitationDetails {
   invitedEmail: string;
 }
 
-type PageState = 'loading' | 'valid' | 'invalid' | 'already_member' | 'wrong_email' | 'not_found' | 'error';
+type PageState = 'loading' | 'valid' | 'invalid' | 'already_member' | 'error';
 
-async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
-  return fetch(path, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init.headers as Record<string, string> ?? {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-  });
-}
+type ActionError = {
+  message: string;
+  action: 'accept' | 'decline';
+} | null;
 
 const ROLE_DESCRIPTIONS: Record<string, string> = {
   admin: 'Can invite members, manage roles, and access all workspace features',
@@ -42,9 +34,10 @@ export default function AcceptInvitationPage() {
   const [pageState, setPageState] = useState<PageState>('loading');
   const [invitation, setInvitation] = useState<InvitationDetails | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<ActionError>(null);
+  const [wrongEmail, setWrongEmail] = useState(false);
 
-  const isAuthenticated = !!getAuth().currentUser;
+  const isAuthenticated = typeof window !== 'undefined' && !!authFetch;
 
   useEffect(() => {
     if (!token) { setPageState('invalid'); return; }
@@ -52,8 +45,8 @@ export default function AcceptInvitationPage() {
     const validate = async () => {
       try {
         const res = await fetch(`/api/team/invitations/validate?token=${encodeURIComponent(token)}`);
-        if (res.status === 404) { setPageState('not_found'); return; }
-        if (res.status === 410) { setPageState('invalid'); return; }
+        // 404 and 410 both mean invalid/expired
+        if (res.status === 404 || res.status === 410) { setPageState('invalid'); return; }
         if (!res.ok) { setPageState('error'); return; }
         const data = await res.json();
         if (data.alreadyMember) { setInvitation(data.invitation); setPageState('already_member'); return; }
@@ -70,15 +63,29 @@ export default function AcceptInvitationPage() {
   const handleAccept = async () => {
     if (!token) return;
     setSubmitting(true);
+    setActionError(null);
+    setWrongEmail(false);
     try {
       const res = await authFetch('/api/team/invitations/accept', {
         method: 'POST',
         body: JSON.stringify({ token }),
       });
-      if (res.status === 403) { setErrorMessage('This invitation was sent to a different email address.'); return; }
-      if (!res.ok) { setErrorMessage('Failed to accept invitation.'); return; }
+      if (res.status === 403) {
+        setWrongEmail(true);
+        return;
+      }
+      if (!res.ok) {
+        setActionError({ message: 'Something went wrong. Please try again.', action: 'accept' });
+        return;
+      }
       const data = await res.json();
       router.replace(`/dashboard?welcome=${encodeURIComponent(data.workspaceName ?? invitation?.workspaceName ?? '')}`);
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        setActionError({ message: 'Session expired. Please sign in again.', action: 'accept' });
+      } else {
+        setActionError({ message: 'Check your connection and try again.', action: 'accept' });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -87,13 +94,23 @@ export default function AcceptInvitationPage() {
   const handleDecline = async () => {
     if (!token) return;
     setSubmitting(true);
+    setActionError(null);
     try {
-      await authFetch('/api/team/invitations/decline', {
+      const res = await authFetch('/api/team/invitations/decline', {
         method: 'POST',
         body: JSON.stringify({ token }),
       });
-      // Use replace so the invitation token is removed from browser history
+      if (!res.ok) {
+        setActionError({ message: 'Something went wrong. Please try again.', action: 'decline' });
+        return;
+      }
       router.replace('/');
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        setActionError({ message: 'Session expired. Please sign in again.', action: 'decline' });
+      } else {
+        setActionError({ message: 'Check your connection and try again.', action: 'decline' });
+      }
     } finally {
       setSubmitting(false);
     }
@@ -134,38 +151,55 @@ export default function AcceptInvitationPage() {
               </p>
             </div>
 
-            {errorMessage && (
-              <div className="flex items-center gap-2 mb-4 px-3 py-2 bg-red-50 dark:bg-red-900/20 rounded-lg text-xs text-red-600 dark:text-red-400">
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-                {errorMessage}
+            {/* Wrong email error */}
+            {wrongEmail && (
+              <div className="flex items-start gap-2 mb-4 px-3 py-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg">
+                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0 mt-0.5" />
+                <div className="space-y-1.5">
+                  <p className="text-xs text-red-700 dark:text-red-300">
+                    This invitation was sent to a different email address. Please sign in with the correct account.
+                  </p>
+                  <button
+                    onClick={handleSignIn}
+                    className="text-xs text-red-700 dark:text-red-300 underline hover:no-underline font-medium"
+                  >
+                    Sign in with a different account
+                  </button>
+                </div>
               </div>
             )}
 
-            {isAuthenticated ? (
-              <div className="flex gap-2">
+            {/* Action error (500/network) */}
+            {actionError && !wrongEmail && (
+              <div className="flex items-center gap-2 mb-4 px-3 py-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg">
+                <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
+                <span className="text-xs text-red-700 dark:text-red-300 flex-1">{actionError.message}</span>
                 <button
-                  onClick={handleAccept}
-                  disabled={submitting}
-                  className="flex-1 py-2.5 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 transition-colors"
+                  onClick={actionError.action === 'accept' ? handleAccept : handleDecline}
+                  className="text-xs text-red-700 dark:text-red-300 underline hover:no-underline font-medium"
                 >
-                  Accept Invitation
-                </button>
-                <button
-                  onClick={handleDecline}
-                  disabled={submitting}
-                  className="flex-1 py-2.5 text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors"
-                >
-                  Decline
+                  Retry
                 </button>
               </div>
-            ) : (
-              <button
-                onClick={handleSignIn}
-                className="w-full py-2.5 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
-              >
-                Sign in to accept this invitation
-              </button>
             )}
+
+            <div className="flex gap-2">
+              <button
+                onClick={handleAccept}
+                disabled={submitting}
+                className="flex-1 flex items-center justify-center gap-1.5 py-2.5 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 transition-colors"
+              >
+                {submitting && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                Accept Invitation
+              </button>
+              <button
+                onClick={handleDecline}
+                disabled={submitting}
+                className="flex-1 py-2.5 text-sm font-medium border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 disabled:opacity-50 transition-colors"
+              >
+                Decline
+              </button>
+            </div>
           </>
         )}
 
@@ -174,7 +208,7 @@ export default function AcceptInvitationPage() {
             <p className="text-sm text-gray-700 dark:text-gray-300">
               You are already a member of <strong>{invitation.workspaceName}</strong>.
             </p>
-            <a href="/dashboard" className="text-sm text-blue-600 underline">Go to Dashboard</a>
+            <a href="/dashboard" className="text-sm text-blue-600 hover:underline">Go to Dashboard</a>
           </div>
         )}
 
@@ -184,13 +218,6 @@ export default function AcceptInvitationPage() {
             <p className="text-sm text-gray-700 dark:text-gray-300">
               This invitation link is invalid or has expired. Please ask your workspace admin to send a new invitation.
             </p>
-          </div>
-        )}
-
-        {pageState === 'not_found' && (
-          <div className="text-center space-y-3">
-            <p className="text-sm text-gray-700 dark:text-gray-300">Invitation not found.</p>
-            <a href="/" className="text-sm text-blue-600 underline">Go Home</a>
           </div>
         )}
 

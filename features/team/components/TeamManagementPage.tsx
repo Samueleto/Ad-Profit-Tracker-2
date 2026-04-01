@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { ChevronDown, UserPlus, AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
+import { authFetch, SessionExpiredError } from '@/lib/auth/teamAuthFetch';
 import { getAuth } from 'firebase/auth';
 import type { WorkspaceMember, WorkspaceMetadata, WorkspaceInvitationSafe } from '../types';
 import RoleBadge from './RoleBadge';
@@ -14,25 +16,6 @@ import ConfirmDialog from './ConfirmDialog';
 import RoleSelector from './RoleSelector';
 import InviteMemberModal from './InviteMemberModal';
 import PermissionsTab from '@/features/rbac/components/PermissionsTab';
-
-async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  const auth = getAuth();
-  let token = await auth.currentUser?.getIdToken();
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(init.headers as Record<string, string> ?? {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-  let res = await fetch(path, { ...init, headers });
-  if (res.status === 401) {
-    token = await auth.currentUser?.getIdToken(true);
-    res = await fetch(path, {
-      ...init,
-      headers: { ...headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    });
-  }
-  return res;
-}
 
 type FetchState = 'loading' | 'success' | 'error_403' | 'error_404' | 'error_500';
 type TeamTab = 'members' | 'permissions';
@@ -81,10 +64,15 @@ export default function TeamManagementPage() {
       setWorkspace(wsData?.workspace ?? null);
       setWorkspaceName(wsData?.workspace?.workspaceName ?? '');
       setFetchState('success');
-    } catch {
-      setFetchState('error_500');
+    } catch (err) {
+      if (err instanceof SessionExpiredError) {
+        toast.error('Session expired. Please sign in again.');
+        router.push('/');
+      } else {
+        setFetchState('error_500');
+      }
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -93,12 +81,21 @@ export default function TeamManagementPage() {
   const handleSaveWorkspaceName = async () => {
     if (!workspaceName.trim()) return;
     setSavingName(true);
+    const previousName = workspace?.workspaceName ?? '';
     try {
-      await authFetch('/api/team/workspace', {
+      const res = await authFetch('/api/team/workspace', {
         method: 'PATCH',
         body: JSON.stringify({ workspaceName: workspaceName.trim() }),
       });
-      setEditingName(false);
+      if (!res.ok) {
+        setWorkspaceName(previousName);
+        toast.error('Something went wrong. Please try again.');
+      } else {
+        setEditingName(false);
+      }
+    } catch {
+      setWorkspaceName(previousName);
+      toast.error('Something went wrong. Please try again.');
     } finally {
       setSavingName(false);
     }
@@ -111,12 +108,24 @@ export default function TeamManagementPage() {
 
   const handleConfirmRoleChange = async () => {
     if (!roleChangeTarget) return;
-    await authFetch(`/api/team/members/${roleChangeTarget.uid}/role`, {
-      method: 'PATCH',
-      body: JSON.stringify({ role: selectedRole }),
-    });
-    setRoleChangeTarget(null);
-    fetchAll();
+    const prevMembers = members;
+    try {
+      const res = await authFetch(`/api/team/members/${roleChangeTarget.uid}/role`, {
+        method: 'PATCH',
+        body: JSON.stringify({ role: selectedRole }),
+      });
+      setRoleChangeTarget(null);
+      if (!res.ok) {
+        toast.error('Something went wrong. Please try again.');
+        setMembers(prevMembers);
+      } else {
+        fetchAll();
+      }
+    } catch {
+      toast.error('Something went wrong. Please try again.');
+      setMembers(prevMembers);
+      setRoleChangeTarget(null);
+    }
   };
 
   const handleRemoveMember = (member: WorkspaceMember) => {
@@ -125,9 +134,21 @@ export default function TeamManagementPage() {
       message: `Remove ${member.displayName || member.email} from this workspace?`,
       confirmLabel: 'Remove',
       onConfirm: async () => {
-        await authFetch(`/api/team/members/${member.uid}`, { method: 'DELETE' });
-        setConfirmDialog(null);
-        fetchAll();
+        const prevMembers = members;
+        try {
+          const res = await authFetch(`/api/team/members/${member.uid}`, { method: 'DELETE' });
+          setConfirmDialog(null);
+          if (!res.ok) {
+            toast.error('Something went wrong. Please try again.');
+            setMembers(prevMembers);
+          } else {
+            fetchAll();
+          }
+        } catch {
+          toast.error('Something went wrong. Please try again.');
+          setMembers(prevMembers);
+          setConfirmDialog(null);
+        }
       },
     });
   };
@@ -138,12 +159,24 @@ export default function TeamManagementPage() {
       message: `Transfer ownership to ${member.displayName || member.email}? You will become an Admin.`,
       confirmLabel: 'Transfer',
       onConfirm: async () => {
-        await authFetch(`/api/team/members/${member.uid}/role`, {
-          method: 'PATCH',
-          body: JSON.stringify({ role: 'owner' }),
-        });
-        setConfirmDialog(null);
-        fetchAll();
+        const prevMembers = members;
+        try {
+          const res = await authFetch(`/api/team/members/${member.uid}/role`, {
+            method: 'PATCH',
+            body: JSON.stringify({ role: 'owner' }),
+          });
+          setConfirmDialog(null);
+          if (!res.ok) {
+            toast.error('Something went wrong. Please try again.');
+            setMembers(prevMembers);
+          } else {
+            fetchAll();
+          }
+        } catch {
+          toast.error('Something went wrong. Please try again.');
+          setMembers(prevMembers);
+          setConfirmDialog(null);
+        }
       },
     });
   };
@@ -154,9 +187,18 @@ export default function TeamManagementPage() {
       message: 'Are you sure you want to leave this workspace?',
       confirmLabel: 'Leave',
       onConfirm: async () => {
-        await authFetch(`/api/team/members/${currentUserId}`, { method: 'DELETE' });
-        setConfirmDialog(null);
-        router.replace('/dashboard');
+        try {
+          const res = await authFetch(`/api/team/members/${currentUserId}`, { method: 'DELETE' });
+          setConfirmDialog(null);
+          if (!res.ok) {
+            toast.error('Something went wrong. Please try again.');
+          } else {
+            router.replace('/dashboard');
+          }
+        } catch {
+          toast.error('Something went wrong. Please try again.');
+          setConfirmDialog(null);
+        }
       },
     });
   };
@@ -167,28 +209,47 @@ export default function TeamManagementPage() {
       message: `Revoke invitation for ${invitation.invitedEmail}?`,
       confirmLabel: 'Revoke',
       onConfirm: async () => {
-        await authFetch(`/api/team/invitations/${invitation.id}`, { method: 'DELETE' });
-        setConfirmDialog(null);
-        fetchAll();
+        const prevInvitations = invitations;
+        try {
+          const res = await authFetch(`/api/team/invitations/${invitation.id}`, { method: 'DELETE' });
+          setConfirmDialog(null);
+          if (!res.ok) {
+            toast.error('Something went wrong. Please try again.');
+            setInvitations(prevInvitations);
+          } else {
+            fetchAll();
+          }
+        } catch {
+          toast.error('Something went wrong. Please try again.');
+          setInvitations(prevInvitations);
+          setConfirmDialog(null);
+        }
       },
     });
   };
 
   if (fetchState === 'error_403') {
     return (
-      <div className="p-6 text-center">
-        <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-2" />
-        <p className="text-sm text-gray-700 dark:text-gray-300 mb-2">Access Denied</p>
-        <a href="/dashboard" className="text-sm text-blue-600 underline">Go to Dashboard</a>
+      <div className="p-6 text-center space-y-3">
+        <AlertCircle className="w-8 h-8 text-red-500 mx-auto" />
+        <p className="text-sm font-medium text-gray-900 dark:text-white">Access Denied</p>
+        <p className="text-sm text-gray-600 dark:text-gray-400">
+          You do not have permission to manage this workspace.
+        </p>
+        <a href="/dashboard" className="inline-block text-sm text-blue-600 hover:underline">
+          Go to Dashboard
+        </a>
       </div>
     );
   }
 
   if (fetchState === 'error_404') {
     return (
-      <div className="p-6 text-center">
-        <p className="text-sm text-gray-700 dark:text-gray-300 mb-2">Workspace not found.</p>
-        <a href="/dashboard" className="text-sm text-blue-600 underline">Go to Dashboard</a>
+      <div className="p-6 text-center space-y-3">
+        <p className="text-sm font-medium text-gray-900 dark:text-white">Workspace not found</p>
+        <a href="/dashboard" className="inline-block text-sm text-blue-600 hover:underline">
+          Go to Dashboard
+        </a>
       </div>
     );
   }

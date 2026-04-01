@@ -1,23 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { getAuth } from 'firebase/auth';
-
-async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  const auth = getAuth();
-  let token = await auth.currentUser?.getIdToken();
-  const makeHeaders = (t: string | undefined) => ({
-    'Content-Type': 'application/json',
-    ...(init.headers as Record<string, string> ?? {}),
-    ...(t ? { Authorization: `Bearer ${t}` } : {}),
-  });
-  let res = await fetch(path, { ...init, headers: makeHeaders(token) });
-  if (res.status === 401) {
-    token = await auth.currentUser?.getIdToken(true);
-    res = await fetch(path, { ...init, headers: makeHeaders(token) });
-  }
-  return res;
-}
+import { authFetch, SessionExpiredError } from '@/lib/auth/teamAuthFetch';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -63,8 +47,8 @@ export function useInvitationValidation(token: string | null): UseInvitationVali
     (async () => {
       try {
         const res = await authFetch(`/api/team/invitations/validate?token=${encodeURIComponent(token)}`);
-        if (res.status === 401 || res.status === 403) { setErrorType('auth'); return; }
-        if (res.status === 404) { setErrorType('not_found'); return; }
+        if (res.status === 403) { setErrorType('auth'); return; }
+        if (res.status === 404 || res.status === 410) { setErrorType('not_found'); return; }
         if (!res.ok) {
           const data = await res.json().catch(() => ({}));
           const code: string = data?.code ?? '';
@@ -77,8 +61,12 @@ export function useInvitationValidation(token: string | null): UseInvitationVali
         const data = await res.json();
         setDetails(data.invitation ?? data);
         setErrorType(null);
-      } catch {
-        setErrorType('network');
+      } catch (err) {
+        if (err instanceof SessionExpiredError) {
+          setErrorType('auth');
+        } else {
+          setErrorType('network');
+        }
       } finally {
         setLoading(false);
       }
@@ -93,7 +81,9 @@ export function useInvitationValidation(token: string | null): UseInvitationVali
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data?.message ?? 'Failed to accept invitation');
+      const err = new Error(data?.message ?? 'Failed to accept invitation') as Error & { status?: number };
+      err.status = res.status;
+      throw err;
     }
   }, [token]);
 
@@ -105,7 +95,9 @@ export function useInvitationValidation(token: string | null): UseInvitationVali
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data?.message ?? 'Failed to decline invitation');
+      const err = new Error(data?.message ?? 'Failed to decline invitation') as Error & { status?: number };
+      err.status = res.status;
+      throw err;
     }
   }, [token]);
 

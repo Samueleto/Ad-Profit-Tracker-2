@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { X, Loader2 } from 'lucide-react';
-import { getAuth } from 'firebase/auth';
+import { X, Loader2, AlertTriangle } from 'lucide-react';
+import { authFetch } from '@/lib/auth/teamAuthFetch';
 import RoleSelector from './RoleSelector';
 
 interface InviteMemberModalProps {
@@ -13,24 +13,7 @@ interface InviteMemberModalProps {
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  const auth = getAuth();
-  let token = await auth.currentUser?.getIdToken();
-  const headers = {
-    'Content-Type': 'application/json',
-    ...(init.headers as Record<string, string> ?? {}),
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-  let res = await fetch(path, { ...init, headers });
-  if (res.status === 401) {
-    token = await auth.currentUser?.getIdToken(true);
-    res = await fetch(path, {
-      ...init,
-      headers: { ...headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-    });
-  }
-  return res;
-}
+type FormErrorType = '403' | '404' | '429' | '500' | 'network' | null;
 
 export default function InviteMemberModal({ workspaceName, onClose, onSuccess }: InviteMemberModalProps) {
   const [email, setEmail] = useState('');
@@ -39,6 +22,17 @@ export default function InviteMemberModal({ workspaceName, onClose, onSuccess }:
   const [message, setMessage] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [formErrorType, setFormErrorType] = useState<FormErrorType>(null);
+
+  const setError = (msg: string, type: FormErrorType) => {
+    setFormError(msg);
+    setFormErrorType(type);
+  };
+
+  const clearError = () => {
+    setFormError(null);
+    setFormErrorType(null);
+  };
 
   const validateEmail = () => {
     if (!email) { setEmailError('Email is required'); return false; }
@@ -50,7 +44,7 @@ export default function InviteMemberModal({ workspaceName, onClose, onSuccess }:
   const handleSubmit = async () => {
     if (!validateEmail()) return;
     setSubmitting(true);
-    setFormError(null);
+    clearError();
     try {
       const res = await authFetch('/api/team/invitations', {
         method: 'POST',
@@ -61,18 +55,24 @@ export default function InviteMemberModal({ workspaceName, onClose, onSuccess }:
         return;
       }
       if (res.status === 429) {
-        setFormError('Too many invitations sent. Try again in an hour.');
+        setError('Too many invitations sent. Try again in an hour.', '429');
         return;
       }
       if (res.status === 403) {
-        setFormError('You do not have permission to invite members.');
+        setError('You do not have permission to invite members.', '403');
+        return;
+      }
+      if (res.status === 404) {
+        setError('Workspace not found.', '404');
         return;
       }
       if (!res.ok) {
-        setFormError('Something went wrong. Please try again.');
+        setError('Something went wrong. Please try again.', '500');
         return;
       }
       onSuccess(email);
+    } catch {
+      setError('Check your connection and try again.', 'network');
     } finally {
       setSubmitting(false);
     }
@@ -137,7 +137,35 @@ export default function InviteMemberModal({ workspaceName, onClose, onSuccess }:
             <p className="text-xs text-gray-400 text-right">{message.length}/200</p>
           </div>
 
-          {formError && (
+          {/* Error banners */}
+          {formError && formErrorType === '429' && (
+            <div className="flex items-start gap-2 px-3 py-2.5 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-500 flex-shrink-0 mt-0.5" />
+              <span className="text-xs text-amber-700 dark:text-amber-300 flex-1">{formError}</span>
+              <button onClick={clearError} className="text-amber-400 hover:text-amber-600">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+          {formError && formErrorType === '403' && (
+            <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg">
+              <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
+              <span className="text-xs text-red-700 dark:text-red-300 flex-1">{formError}</span>
+              <button onClick={onClose} className="text-red-400 hover:text-red-600">
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+          {formError && (formErrorType === '500' || formErrorType === 'network') && (
+            <div className="flex items-start gap-2 px-3 py-2.5 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded-lg">
+              <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
+              <span className="text-xs text-red-700 dark:text-red-300 flex-1">{formError}</span>
+              <button onClick={handleSubmit} className="text-xs text-red-700 dark:text-red-300 underline hover:no-underline font-medium">
+                Retry
+              </button>
+            </div>
+          )}
+          {formError && formErrorType === '404' && (
             <p className="text-xs text-red-500">{formError}</p>
           )}
         </div>

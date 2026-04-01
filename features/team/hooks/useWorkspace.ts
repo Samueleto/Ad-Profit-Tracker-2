@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { getAuthHeaders } from '@/lib/auth/getAuthHeaders';
+import { authFetch, SessionExpiredError } from '@/lib/auth/teamAuthFetch';
 import type { WorkspaceMetadata } from '../types';
 
 export interface UseWorkspaceResult {
@@ -9,6 +9,7 @@ export interface UseWorkspaceResult {
   workspaceName: string;
   loading: boolean;
   error: string | null;
+  sessionExpired: boolean;
   updateWorkspaceName: (name: string) => Promise<void>;
 }
 
@@ -17,20 +18,25 @@ export function useWorkspace(): UseWorkspaceResult {
   const [workspaceName, setWorkspaceName] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [sessionExpired, setSessionExpired] = useState(false);
 
   const fetchWorkspace = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setSessionExpired(false);
     try {
-      const headers = await getAuthHeaders();
-      const res = await fetch('/api/team/workspace', { headers });
+      const res = await authFetch('/api/team/workspace');
       if (!res.ok) { setError('Failed to load workspace.'); return; }
       const data = await res.json();
       const ws: WorkspaceMetadata = data.workspace ?? data;
       setWorkspace(ws);
       setWorkspaceName(ws.workspaceName ?? '');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load workspace.');
+      if (err instanceof SessionExpiredError) {
+        setSessionExpired(true);
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to load workspace.');
+      }
     } finally {
       setLoading(false);
     }
@@ -44,10 +50,8 @@ export function useWorkspace(): UseWorkspaceResult {
     setWorkspaceName(name);
     setWorkspace(prev => prev ? { ...prev, workspaceName: name } : prev);
     try {
-      const headers = await getAuthHeaders();
-      const res = await fetch('/api/team/workspace', {
+      const res = await authFetch('/api/team/workspace', {
         method: 'PATCH',
-        headers,
         body: JSON.stringify({ workspaceName: name }),
       });
       if (!res.ok) {
@@ -62,5 +66,5 @@ export function useWorkspace(): UseWorkspaceResult {
     }
   }, [workspaceName]);
 
-  return { workspace, workspaceName, loading, error, updateWorkspaceName };
+  return { workspace, workspaceName, loading, error, sessionExpired, updateWorkspaceName };
 }
