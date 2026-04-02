@@ -36,6 +36,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ violations, total: violations.length });
   } catch (error) {
     console.error("GET /api/rate-limits/violations error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { code: "FIRESTORE_READ_FAILURE", message: "Unable to load violations. Please try again." },
+      { status: 500 }
+    );
   }
 }

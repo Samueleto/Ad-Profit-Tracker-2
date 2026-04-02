@@ -40,6 +40,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ statuses });
   } catch (error) {
     console.error("GET /api/rate-limits/status error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { code: "FIRESTORE_READ_FAILURE", message: "Rate limit service temporarily unavailable. Please try again." },
+      { status: 500 }
+    );
   }
 }
