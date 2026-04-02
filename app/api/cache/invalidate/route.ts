@@ -8,16 +8,18 @@ const invalidateRateLimit = new Map<string, { count: number; resetAt: number }>(
 const RATE_LIMIT_MAX = 15;
 const RATE_LIMIT_WINDOW_MS = 60 * 60 * 1000; // 1 hour
 
-function checkInvalidateRateLimit(uid: string): boolean {
+function checkInvalidateRateLimit(uid: string): { allowed: boolean; retryAfterSeconds: number } {
   const now = Date.now();
   const entry = invalidateRateLimit.get(uid);
   if (!entry || now >= entry.resetAt) {
     invalidateRateLimit.set(uid, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-    return true;
+    return { allowed: true, retryAfterSeconds: 0 };
   }
-  if (entry.count >= RATE_LIMIT_MAX) return false;
+  if (entry.count >= RATE_LIMIT_MAX) {
+    return { allowed: false, retryAfterSeconds: Math.ceil((entry.resetAt - now) / 1000) };
+  }
   entry.count++;
-  return true;
+  return { allowed: true, retryAfterSeconds: 0 };
 }
 
 export async function POST(request: Request) {
@@ -25,10 +27,14 @@ export async function POST(request: Request) {
   if ("error" in authResult) return authResult.error;
   const uid = authResult.token.uid;
 
-  if (!checkInvalidateRateLimit(uid)) {
+  const { allowed, retryAfterSeconds } = checkInvalidateRateLimit(uid);
+  if (!allowed) {
     return NextResponse.json(
       { error: "Rate limit exceeded. Maximum 15 cache invalidations per hour." },
-      { status: 429 }
+      {
+        status: 429,
+        headers: { 'Retry-After': String(retryAfterSeconds) },
+      }
     );
   }
 

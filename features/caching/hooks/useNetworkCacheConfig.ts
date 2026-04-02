@@ -58,7 +58,12 @@ export function useNetworkCacheConfig(networkId: string): NetworkCacheConfig {
             : DEFAULTS.serverCacheTTLSeconds,
         });
       },
-      () => { setConfig(DEFAULTS); } // on error, fall back to defaults
+      (err) => {
+        if (process.env.NODE_ENV === 'development') {
+          console.warn('[useNetworkCacheConfig] Firestore error, falling back to defaults:', err);
+        }
+        setConfig(DEFAULTS);
+      }
     );
     return unsub;
   }, [networkId]);
@@ -68,12 +73,22 @@ export function useNetworkCacheConfig(networkId: string): NetworkCacheConfig {
 
 // ─── useCachedNetworkData ─────────────────────────────────────────────────────
 
+export interface UseCachedNetworkDataResult<T> {
+  data: T | undefined;
+  error: Error | undefined;
+  isLoading: boolean;
+  isValidating: boolean;
+  /** True when serving previously-cached data after a failed revalidation */
+  isStale: boolean;
+  mutate: () => void;
+}
+
 export function useCachedNetworkData<T>(
   networkId: string,
   key: string | null,
   fetcher: (url: string) => Promise<T>,
   extraOptions?: SWRConfiguration<T>
-) {
+): UseCachedNetworkDataResult<T> {
   const cacheConfig = useNetworkCacheConfig(networkId);
   const swrOptions: SWRConfiguration<T> = {
     dedupingInterval: cacheConfig.clientCacheStaleSeconds * 1000,
@@ -81,5 +96,10 @@ export function useCachedNetworkData<T>(
     keepPreviousData: true,
     ...extraOptions,
   };
-  return useSWR<T>(key, fetcher, swrOptions);
+  const { data, error, isLoading, isValidating, mutate } = useSWR<T>(key, fetcher, swrOptions);
+
+  // isStale: we have data from a previous fetch but the latest revalidation failed
+  const isStale = data !== undefined && !!error;
+
+  return { data, error, isLoading, isValidating, isStale, mutate };
 }
