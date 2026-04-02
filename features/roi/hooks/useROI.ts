@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getAuthHeaders } from '@/lib/auth/getAuthHeaders';
+import { getAuth } from 'firebase/auth';
 import type {
   RoiComputeResponse,
   RoiBreakdownResponse,
@@ -12,24 +12,55 @@ import type {
   RoiDimension,
 } from '../types';
 
-// ─── Shared fetch ─────────────────────────────────────────────────────────────
+// ─── Typed error ──────────────────────────────────────────────────────────────
+
+export class RoiApiError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+    this.name = 'RoiApiError';
+  }
+}
+
+// ─── Shared fetch with 401 retry ──────────────────────────────────────────────
 
 async function authFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  let headers: Record<string, string>;
+  const auth = getAuth();
+
+  const makeHeaders = (token?: string | null): Record<string, string> => ({
+    'Content-Type': 'application/json',
+    ...(init.headers as Record<string, string> ?? {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  });
+
+  const doRequest = async (forceRefresh = false): Promise<Response> => {
+    const token = await auth.currentUser?.getIdToken(forceRefresh);
+    return fetch(path, { ...init, headers: makeHeaders(token) });
+  };
+
+  let res: Response;
   try {
-    headers = await getAuthHeaders();
+    res = await doRequest();
   } catch {
-    // Try force refresh
-    const { getAuth } = await import('firebase/auth');
-    const token = await getAuth().currentUser?.getIdToken(true);
-    headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+    throw new RoiApiError(0, 'Check your connection and try again.');
   }
-  const res = await fetch(path, { ...init, headers: { ...headers, ...(init.headers as Record<string, string> ?? {}) } });
+
+  if (res.status === 401) {
+    try {
+      res = await doRequest(true); // force token refresh
+    } catch {
+      throw new RoiApiError(401, 'Session expired. Please sign in again.');
+    }
+    if (res.status === 401) {
+      throw new RoiApiError(401, 'Session expired. Please sign in again.');
+    }
+  }
+
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
-    throw new Error(data?.message ?? `Request failed: ${res.status}`);
+    throw new RoiApiError(res.status, data?.error ?? data?.message ?? `Request failed: ${res.status}`);
   }
-  return res.json();
+
+  return res.json() as Promise<T>;
 }
 
 // ─── In-memory client cache ───────────────────────────────────────────────────
@@ -37,6 +68,8 @@ async function authFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
 const roiCache = new Map<string, RoiComputeResponse>();
 
 // ─── useROIMetrics ────────────────────────────────────────────────────────────
+
+export type RoiErrorType = 'error_401' | 'error_403' | 'error_404' | 'error_500' | null;
 
 export interface UseROIMetricsResult {
   roi: number | null;
@@ -50,6 +83,7 @@ export interface UseROIMetricsResult {
   series: RoiComputeResponse['series'];
   isLoading: boolean;
   error: string | null;
+  errorType: RoiErrorType;
   refetch: () => void;
 }
 
@@ -62,6 +96,7 @@ export function useROIMetrics(
   const [data, setData] = useState<RoiComputeResponse | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorType, setErrorType] = useState<RoiErrorType>(null);
   const [tick, setTick] = useState(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const abortRef = useRef<AbortController | null>(null);
@@ -77,6 +112,7 @@ export function useROIMetrics(
     abortRef.current = new AbortController();
     setIsLoading(true);
     setError(null);
+    setErrorType(null);
     try {
       const params = new URLSearchParams({ dateFrom: df, dateTo: dt, groupBy: gb });
       if (nid) params.set('networkId', nid);
@@ -85,6 +121,11 @@ export function useROIMetrics(
       setData(result);
     } catch (err) {
       if (err instanceof Error && err.name === 'AbortError') return;
+      const roiErr = err instanceof RoiApiError ? err : null;
+      if (roiErr?.status === 401) setErrorType('error_401');
+      else if (roiErr?.status === 403) setErrorType('error_403');
+      else if (roiErr?.status === 404) setErrorType('error_404');
+      else setErrorType('error_500');
       setError(err instanceof Error ? err.message : 'Failed to load ROI metrics.');
     } finally {
       setIsLoading(false);
@@ -101,7 +142,6 @@ export function useROIMetrics(
   }, [dateFrom, dateTo, networkId, groupBy, tick, doFetch]);
 
   const refetch = useCallback(() => {
-    // Clear cache for current params
     const cacheKey = `${dateFrom}|${dateTo}|${networkId ?? ''}|${groupBy}`;
     roiCache.delete(cacheKey);
     setTick(n => n + 1);
@@ -119,6 +159,7 @@ export function useROIMetrics(
     series: data?.series,
     isLoading,
     error,
+    errorType,
     refetch,
   };
 }
@@ -144,7 +185,7 @@ export function useROIBreakdown(dateFrom: string, dateTo: string, dimension: Roi
     setError(null);
     authFetch<RoiBreakdownResponse>(`/api/roi/breakdown?dateFrom=${dateFrom}&dateTo=${dateTo}&dimension=${dimension}`)
       .then(d => { setBreakdown(d.breakdown ?? []); setSummary(d.summary ?? null); })
-      .catch(err => setError(err.message))
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load ROI breakdown.'))
       .finally(() => setIsLoading(false));
   }, [dateFrom, dateTo, dimension]);
 
@@ -160,6 +201,7 @@ export interface UseROIThresholdsResult {
   isLoading: boolean;
   error: string | null;
   validationError: string | null;
+  isRateLimited: boolean;
   updateThresholds: (patch: Partial<RoiThresholds>) => Promise<void>;
 }
 
@@ -180,6 +222,7 @@ export function useROIThresholds(): UseROIThresholdsResult {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [validationError, setValidationError] = useState<string | null>(null);
+  const [isRateLimited, setIsRateLimited] = useState(false);
 
   useEffect(() => {
     authFetch<RoiThresholdsGetResponse>('/api/roi/thresholds')
@@ -188,7 +231,7 @@ export function useROIThresholds(): UseROIThresholdsResult {
         setThresholds(t);
         setUsingDefaults(ud ?? []);
       })
-      .catch(err => setError(err.message))
+      .catch(err => setError(err instanceof Error ? err.message : 'Failed to load thresholds.'))
       .finally(() => setIsLoading(false));
   }, []);
 
@@ -209,12 +252,15 @@ export function useROIThresholds(): UseROIThresholdsResult {
       setThresholds(result);
     } catch (err) {
       setThresholds(previous); // rollback
-      setError(err instanceof Error ? err.message : 'Failed to save thresholds.');
+      if (err instanceof RoiApiError && err.status === 429) {
+        setIsRateLimited(true);
+        setTimeout(() => setIsRateLimited(false), 60_000);
+      }
       throw err;
     } finally {
       setIsSaving(false);
     }
   }, [thresholds]);
 
-  return { thresholds, usingDefaults, isSaving, isLoading, error, validationError, updateThresholds };
+  return { thresholds, usingDefaults, isSaving, isLoading, error, validationError, isRateLimited, updateThresholds };
 }

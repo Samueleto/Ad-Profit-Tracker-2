@@ -2,15 +2,15 @@
 
 import { useState, useEffect } from 'react';
 import { X } from 'lucide-react';
+import { toast } from 'sonner';
 import { useROIThresholds } from '../hooks/useROI';
-import { Toast } from '@/components/ui/Toast';
 
 interface ROIThresholdsPanelProps {
   onClose: () => void;
 }
 
 export default function ROIThresholdsPanel({ onClose }: ROIThresholdsPanelProps) {
-  const { thresholds, usingDefaults, isSaving, isLoading, error, validationError, updateThresholds } = useROIThresholds();
+  const { thresholds, usingDefaults, isSaving, isLoading, isRateLimited, error, validationError, updateThresholds } = useROIThresholds();
 
   const [positiveThreshold, setPositiveThreshold] = useState('');
   const [warningThreshold, setWarningThreshold] = useState('');
@@ -18,7 +18,6 @@ export default function ROIThresholdsPanel({ onClose }: ROIThresholdsPanelProps)
   const [targetRoi, setTargetRoi] = useState('');
   const [alertOnNegative, setAlertOnNegative] = useState(false);
   const [alertOnTargetMiss, setAlertOnTargetMiss] = useState(false);
-  const [saveSuccess, setSaveSuccess] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // Seed form once thresholds load
@@ -46,7 +45,7 @@ export default function ROIThresholdsPanel({ onClose }: ROIThresholdsPanelProps)
   }
 
   const handleSave = async () => {
-    if (inlineError) return;
+    if (inlineError || isRateLimited) return;
     setSaveError(null);
     try {
       await updateThresholds({
@@ -57,10 +56,16 @@ export default function ROIThresholdsPanel({ onClose }: ROIThresholdsPanelProps)
         alertOnNegative,
         alertOnTargetMiss,
       } as Parameters<typeof updateThresholds>[0]);
-      setSaveSuccess(true);
-      setTimeout(onClose, 1200);
+      toast.success('ROI thresholds updated');
+      setTimeout(onClose, 800);
     } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Failed to save thresholds.');
+      const isRateLimit = err instanceof Error && err.message.includes('429');
+      if (isRateLimit) {
+        toast.warning('Too many updates — please wait before saving again');
+      } else {
+        toast.error('Failed to save thresholds. Please try again.');
+        setSaveError(err instanceof Error ? err.message : 'Failed to save thresholds.');
+      }
     }
   };
 
@@ -78,6 +83,18 @@ export default function ROIThresholdsPanel({ onClose }: ROIThresholdsPanelProps)
       {isLoading && (
         <div className="space-y-2">
           {[1, 2, 3].map(i => <div key={i} className="h-8 bg-gray-100 dark:bg-gray-800 rounded animate-pulse" />)}
+        </div>
+      )}
+
+      {!isLoading && usingDefaults.length >= 3 && usingDefaults.includes('positiveThreshold') && usingDefaults.includes('warningThreshold') && usingDefaults.includes('criticalThreshold') && (
+        <div className="px-3 py-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg text-xs text-blue-700 dark:text-blue-400">
+          Using system defaults — save to apply your own thresholds.
+        </div>
+      )}
+
+      {isRateLimited && (
+        <div className="px-3 py-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg text-xs text-amber-700 dark:text-amber-400">
+          Too many updates — please wait before saving again.
         </div>
       )}
 
@@ -168,15 +185,13 @@ export default function ROIThresholdsPanel({ onClose }: ROIThresholdsPanelProps)
 
           <button
             onClick={handleSave}
-            disabled={isSaving || !!inlineError}
+            disabled={isSaving || !!inlineError || isRateLimited}
             className="w-full py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-lg transition-colors"
           >
             {isSaving ? 'Saving…' : 'Save thresholds'}
           </button>
         </div>
       )}
-
-      {saveSuccess && <Toast message="Thresholds saved successfully." variant="success" onClose={() => setSaveSuccess(false)} />}
     </div>
   );
 }

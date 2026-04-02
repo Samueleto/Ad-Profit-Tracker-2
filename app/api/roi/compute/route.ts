@@ -108,6 +108,6 @@ export async function GET(request: Request) {
     return NextResponse.json(result);
   } catch (error) {
     console.error("GET /api/roi/compute error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to retrieve data. Please try again." }, { status: 500 });
   }
 }
