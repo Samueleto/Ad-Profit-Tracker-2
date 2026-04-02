@@ -9,8 +9,9 @@ import {
 } from 'recharts';
 import { format, differenceInDays } from 'date-fns';
 import { ChevronDown, AlertCircle, ShieldAlert } from 'lucide-react';
+import { toast } from 'sonner';
 import { useDateRangeStore } from '@/store/dateRangeStore';
-import { Toast } from '@/components/ui/Toast';
+import ChartErrorBoundary from './ChartErrorBoundary';
 
 type Metric = 'netProfit' | 'revenue' | 'cost' | 'roi';
 type Preset = '7d' | '14d' | '30d' | 'month' | 'custom';
@@ -108,19 +109,21 @@ function SnapshotPanel({ date, onClose, onSessionExpired }: SnapshotPanelProps) 
   const [snap, setSnap] = useState<SnapshotData | null>(null);
   const [loading, setLoading] = useState(true);
   const [accessDenied, setAccessDenied] = useState(false);
+  const [fetchError, setFetchError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setAccessDenied(false);
+    setFetchError(false);
     authFetch(`/api/stats/snapshot?date=${encodeURIComponent(date)}`)
       .then(({ res, sessionExpired }) => {
         if (cancelled) return;
         if (sessionExpired) { onSessionExpired(); return; }
         if (res.status === 403) { setAccessDenied(true); return; }
-        if (!res.ok) return;
+        if (!res.ok) { setFetchError(true); return; }
         return res.json().then(d => { if (!cancelled) setSnap(d); });
       })
-      .catch(() => {})
+      .catch(() => { if (!cancelled) setFetchError(true); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [date, onSessionExpired]);
@@ -137,6 +140,13 @@ function SnapshotPanel({ date, onClose, onSessionExpired }: SnapshotPanelProps) 
         <div className="flex items-center gap-2 text-xs text-red-500">
           <ShieldAlert className="w-3.5 h-3.5" /> Access Denied.
           <a href="/dashboard" className="underline">Go to Dashboard</a>
+        </div>
+      ) : fetchError ? (
+        <div className="flex items-center justify-between text-xs">
+          <span className="flex items-center gap-1.5 text-red-500">
+            <AlertCircle className="w-3.5 h-3.5" /> Failed to load snapshot data.
+          </span>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600 underline">Close</button>
         </div>
       ) : snap ? (
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
@@ -199,9 +209,12 @@ export default function DailyProfitTrendSection({ onSyncNow }: DailyProfitTrendS
   const [insightsOpen, setInsightsOpen] = useState(false);
   const chartRef = useRef<HTMLDivElement>(null);
 
-  // Redirect on session expiry
+  // Redirect on session expiry with toast
   useEffect(() => {
-    if (sessionExpired) router.replace('/');
+    if (sessionExpired) {
+      toast.error('Session expired. Please sign in again.');
+      router.replace('/');
+    }
   }, [sessionExpired, router]);
 
   useEffect(() => {
@@ -278,9 +291,11 @@ export default function DailyProfitTrendSection({ onSyncNow }: DailyProfitTrendS
       if (roiRes.status === 403) { setErrorType('403'); return; }
       if (roiRes.status === 404) { setErrorType('404'); return; }
       if (!roiRes.ok) { setErrorType('500'); return; }
+      // Partial failure — breakdown is required for colorCode; treat as 500
+      if (!breakdownRes.ok) { setErrorType('500'); return; }
 
       const roiData = await roiRes.json();
-      const breakdownData = breakdownRes.ok ? await breakdownRes.json() : { rows: [] };
+      const breakdownData = await breakdownRes.json();
 
       const breakdownMap: Record<string, { colorCode?: string }> = {};
       for (const row of (breakdownData.rows ?? breakdownData.days ?? breakdownData.breakdown ?? [])) {
@@ -332,55 +347,71 @@ export default function DailyProfitTrendSection({ onSyncNow }: DailyProfitTrendS
     { id: 'roi', label: 'ROI' },
   ];
 
-  if (sessionExpired) {
-    return <Toast message="Session expired. Please sign in again." variant="error" />;
-  }
-
   return (
+    <ChartErrorBoundary>
     <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-5">
       {/* Card header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        {/* Metric toggle */}
-        <div className="flex gap-1">
-          {METRICS.map(m => (
-            <button key={m.id} onClick={() => setMetric(m.id)}
-              className={`px-3 py-1 text-xs rounded-lg border transition-colors ${
-                metric === m.id
-                  ? 'bg-blue-600 border-blue-600 text-white'
-                  : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
-              }`}
-            >{m.label}</button>
-          ))}
-        </div>
-
-        {/* Date range + export */}
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="flex gap-1">
-            {(['7d', '14d', '30d', 'month', 'custom'] as const).map(p => (
-              <button key={p} onClick={() => handlePresetClick(p)}
-                className={`px-2 py-1 text-xs rounded border transition-colors ${
-                  preset === p ? 'bg-blue-600 border-blue-600 text-white'
-                  : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
-                }`}>
-                {p === '7d' ? '7d' : p === '14d' ? '14d' : p === '30d' ? '30d' : p === 'month' ? 'Month' : 'Custom'}
-              </button>
-            ))}
-          </div>
-          {preset === 'custom' && (
-            <div className="flex items-center gap-1">
-              <input type="date" value={customFrom} onChange={e => handleCustomFrom(e.target.value)}
-                className="px-2 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-800 dark:text-white" />
-              <span className="text-xs text-gray-400">–</span>
-              <input type="date" value={customTo} onChange={e => handleCustomTo(e.target.value)}
-                className="px-2 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-800 dark:text-white" />
+        {loading ? (
+          <>
+            {/* Metric toggle skeleton */}
+            <div className="flex gap-1">
+              {[1, 2, 3, 4].map(i => (
+                <div key={i} className="h-6 w-14 rounded-lg bg-gray-200 dark:bg-gray-700 animate-pulse" />
+              ))}
             </div>
-          )}
-          {rangeNotice && <span className="text-xs text-amber-500">{rangeNotice}</span>}
-          <button onClick={exportChart}
-            className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 rounded hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
-            Export
-          </button>
-        </div>
+            {/* Date range skeleton */}
+            <div className="flex gap-1">
+              {[1, 2, 3, 4, 5].map(i => (
+                <div key={i} className="h-6 w-10 rounded bg-gray-200 dark:bg-gray-700 animate-pulse" />
+              ))}
+            </div>
+          </>
+        ) : (
+          <>
+            {/* Metric toggle */}
+            <div className="flex gap-1">
+              {METRICS.map(m => (
+                <button key={m.id} onClick={() => setMetric(m.id)}
+                  className={`px-3 py-1 text-xs rounded-lg border transition-colors ${
+                    metric === m.id
+                      ? 'bg-blue-600 border-blue-600 text-white'
+                      : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                  }`}
+                >{m.label}</button>
+              ))}
+            </div>
+
+            {/* Date range + export */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex gap-1">
+                {(['7d', '14d', '30d', 'month', 'custom'] as const).map(p => (
+                  <button key={p} onClick={() => handlePresetClick(p)}
+                    className={`px-2 py-1 text-xs rounded border transition-colors ${
+                      preset === p ? 'bg-blue-600 border-blue-600 text-white'
+                      : 'border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800'
+                    }`}>
+                    {p === '7d' ? '7d' : p === '14d' ? '14d' : p === '30d' ? '30d' : p === 'month' ? 'Month' : 'Custom'}
+                  </button>
+                ))}
+              </div>
+              {preset === 'custom' && (
+                <div className="flex items-center gap-1">
+                  <input type="date" value={customFrom} onChange={e => handleCustomFrom(e.target.value)}
+                    className="px-2 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-800 dark:text-white" />
+                  <span className="text-xs text-gray-400">–</span>
+                  <input type="date" value={customTo} onChange={e => handleCustomTo(e.target.value)}
+                    className="px-2 py-0.5 text-xs border border-gray-300 dark:border-gray-600 rounded dark:bg-gray-800 dark:text-white" />
+                </div>
+              )}
+              {rangeNotice && <span className="text-xs text-amber-500">{rangeNotice}</span>}
+              <button onClick={exportChart}
+                className="px-2 py-1 text-xs border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-400 rounded hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                Export
+              </button>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Loading */}
@@ -512,5 +543,6 @@ export default function DailyProfitTrendSection({ onSyncNow }: DailyProfitTrendS
         </>
       )}
     </div>
+    </ChartErrorBoundary>
   );
 }
