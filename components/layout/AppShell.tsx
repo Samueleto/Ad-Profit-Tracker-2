@@ -17,10 +17,17 @@ import {
 } from "lucide-react";
 import { getAuth } from "firebase/auth";
 import { useRateLimitConfig } from "@/features/rate-limits/hooks";
+import { useNotificationBadge } from "@/features/notifications/hooks/useNotificationBadge";
 
 // Pre-warm rate limit config on app load so views have data immediately
 function RateLimitConfigPreloader() {
   useRateLimitConfig();
+  return null;
+}
+
+// Poll notification unread count every 60 s
+function NotificationBadgePoller() {
+  useNotificationBadge();
   return null;
 }
 import { useAuth } from "@/contexts/AuthContext";
@@ -256,6 +263,8 @@ export default function AppShell({ children }: AppShellProps) {
 
       {/* Pre-warm rate limit config */}
       <RateLimitConfigPreloader />
+      {/* Poll notification unread count */}
+      <NotificationBadgePoller />
     </div>
   );
 }
