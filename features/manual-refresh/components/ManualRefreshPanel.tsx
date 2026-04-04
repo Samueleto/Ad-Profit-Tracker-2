@@ -1,13 +1,14 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Loader2, RefreshCw, ShieldAlert, AlertTriangle, AlertCircle } from 'lucide-react';
 import { SUPPORTED_NETWORKS } from '@/lib/constants';
 import NetworkSyncRow from './NetworkSyncRow';
 import SyncHistoryDrawer from './SyncHistoryDrawer';
 import { useManualRefresh } from '../hooks/useManualRefresh';
-import { Toast } from '@/components/ui/Toast';
+import { toast } from 'sonner';
 
 function formatCountdown(secs: number): string {
   const m = Math.floor(secs / 60);
@@ -24,7 +25,6 @@ export default function ManualRefreshPanel() {
     retryInitialLoad,
     triggeredNetworks,
     triggerError,
-    dismissTriggerError,
     allRateLimit,
     networkRateLimits,
     triggerAll,
@@ -40,8 +40,20 @@ export default function ManualRefreshPanel() {
     accessDenied,
   } = useManualRefresh();
 
+  const router = useRouter();
   const [confirmingAll, setConfirmingAll] = useState(false);
   const [syncingAll, setSyncingAll] = useState(false);
+
+  useEffect(() => {
+    if (sessionExpired) {
+      toast.error('Session expired. Please sign in again.');
+      router.replace('/');
+    }
+  }, [sessionExpired, router]);
+
+  useEffect(() => {
+    if (triggerError) toast.error(triggerError);
+  }, [triggerError]);
 
   const noNetworks = !isInitialLoading && !initLoadError && networkStates.every(n => n.lastSyncStatus === 'never');
 
@@ -66,16 +78,6 @@ export default function ManualRefreshPanel() {
 
   return (
     <>
-    {sessionExpired && <Toast message="Session expired. Please sign in again." variant="error" />}
-    {triggerError && (
-      <Toast
-        key={triggerError}
-        message={triggerError}
-        variant="error"
-        durationMs={5000}
-        onClose={dismissTriggerError}
-      />
-    )}
     {accessDenied && (
       <div className="flex items-center gap-2 p-3 mb-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-700 dark:text-red-400">
         <ShieldAlert className="w-4 h-4 flex-shrink-0" />

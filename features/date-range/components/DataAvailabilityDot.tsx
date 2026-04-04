@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { AlertTriangle, Loader2, ShieldAlert } from 'lucide-react';
 import { useDateRangeStore } from '@/store/dateRangeStore';
 import { auth } from '@/lib/firebase/auth';
-import { Toast } from '@/components/ui/Toast';
+import { toast } from 'sonner';
 
 export default function DataAvailabilityDot() {
   const router = useRouter();
@@ -14,7 +14,10 @@ export default function DataAvailabilityDot() {
   const [accessDenied, setAccessDenied] = useState(false);
 
   useEffect(() => {
-    if (sessionExpired) router.replace('/');
+    if (sessionExpired) {
+      toast.error('Session expired. Please sign in again.');
+      router.replace('/');
+    }
   }, [sessionExpired, router]);
 
   useEffect(() => {
@@ -72,9 +75,7 @@ export default function DataAvailabilityDot() {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [fromDate, toDate, setDataAvailability]);
 
-  if (sessionExpired) {
-    return <Toast message="Session expired. Please sign in again." variant="error" />;
-  }
+  if (sessionExpired) return null;
 
   if (accessDenied) {
     return (

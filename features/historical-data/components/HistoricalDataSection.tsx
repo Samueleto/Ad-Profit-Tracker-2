@@ -9,7 +9,7 @@ function findQuota(qs: unknown[], ep: string) { return (qs as UserQuota[]).find(
 function quotaEmpty(q: UserQuota | undefined) { return q != null && q.remaining === 0; }
 function resetTime(q: UserQuota | undefined) { return q?.resetAt ? new Date(q.resetAt).toLocaleTimeString() : 'soon'; }
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
-import { Toast } from '@/components/ui/Toast';
+import { toast } from 'sonner';
 import {
   useDates,
   useSnapshot,
@@ -126,7 +126,6 @@ export default function HistoricalDataSection() {
   const [groupBy, setGroupBy] = useState<'country' | 'total'>('total');
   const [metric, setMetric] = useState<Metric>('revenue');
   const [geoLimit, setGeoLimit] = useState(10);
-  const [toast, setToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [expanded, setExpanded] = useState(false);
 
@@ -179,13 +178,11 @@ export default function HistoricalDataSection() {
   const handleBackfill = useCallback(async () => {
     await backfill.trigger(dateFrom, dateTo, networkFilter || undefined);
     if (backfill.error) {
-      setToast({ message: backfill.error, variant: 'error' });
+      toast.error(backfill.error);
     } else if (backfill.data) {
       const { triggered, skipped, failed } = backfill.data;
-      setToast({
-        message: `Backfill: ${triggered.length} triggered, ${skipped.length} skipped, ${failed.length} failed.`,
-        variant: failed.length > 0 ? 'error' : 'success',
-      });
+      const msg = `Backfill: ${triggered.length} triggered, ${skipped.length} skipped, ${failed.length} failed.`;
+      if (failed.length > 0) toast.error(msg); else toast.success(msg);
       refreshAll();
       backfill.reset();
     }
@@ -195,9 +192,9 @@ export default function HistoricalDataSection() {
     await deleteSnap.trigger(date, networkFilter || undefined);
     setDeleteConfirm(null);
     if (deleteSnap.error) {
-      setToast({ message: deleteSnap.error, variant: 'error' });
+      toast.error(deleteSnap.error);
     } else {
-      setToast({ message: `Deleted ${deleteSnap.deletedCount ?? 0} snapshot entries for ${date}.`, variant: 'success' });
+      toast.success(`Deleted ${deleteSnap.deletedCount ?? 0} snapshot entries for ${date}.`);
       refreshAll();
       deleteSnap.reset();
     }
@@ -210,8 +207,6 @@ export default function HistoricalDataSection() {
 
   return (
     <>
-      {toast && <Toast message={toast.message} variant={toast.variant} onClose={() => setToast(null)} />}
-
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
         {/* Collapsible header */}
         <button

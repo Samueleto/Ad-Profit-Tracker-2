@@ -2,7 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { Loader2, RefreshCw, CheckCircle, XCircle, Clock, ChevronDown, AlertTriangle } from 'lucide-react';
-import { Toast } from '@/components/ui/Toast';
+import { toast } from 'sonner';
 import {
   useSyncStatus,
   useRetrySync,
@@ -185,7 +185,6 @@ type NetworkOption = typeof NETWORK_OPTIONS[number];
 export default function ScheduledSyncDashboard() {
   const [historyFilter, setHistoryFilter] = useState<NetworkOption>('all');
   const [historyOpen, setHistoryOpen] = useState(false);
-  const [toast, setToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null);
 
   const { networks, isLoading, error, refresh } = useSyncStatus();
   const { userQuotas, networks: rlNetworks } = useRateLimitStatus();
@@ -194,18 +193,17 @@ export default function ScheduledSyncDashboard() {
   const throttledMap = Object.fromEntries((rlNetworks as NetworkThrottle[]).map(n => [n.networkId, n]));
 
   const handleRetrySuccess = useCallback(() => {
-    setToast({ message: 'Retry succeeded — data will update shortly.', variant: 'success' });
+    toast.success('Retry succeeded — data will update shortly.');
     refresh();
   }, [refresh]);
 
   const { retryNetwork, isRetrying, retryError } = useRetrySync(handleRetrySuccess);
 
   const handleRetry = useCallback(async (networkId: string) => {
-    setToast(null);
     try {
       await retryNetwork(networkId);
       if (retryError[networkId]) {
-        setToast({ message: retryError[networkId], variant: 'error' });
+        toast.error(retryError[networkId]);
       }
     } catch {
       // error is already in retryError state
@@ -254,13 +252,6 @@ export default function ScheduledSyncDashboard() {
 
   return (
     <>
-      {toast && (
-        <Toast
-          message={toast.message}
-          variant={toast.variant}
-          onClose={() => setToast(null)}
-        />
-      )}
 
       <div className="space-y-4">
         {/* Header */}

@@ -11,7 +11,7 @@ import AnomalyAlertStrip from './AnomalyAlertStrip';
 import ActivityFeedList from './ActivityFeedList';
 import RefreshButton from './RefreshButton';
 import { useSyncStatus } from '../hooks/useSyncStatus';
-import { Toast } from '@/components/ui/Toast';
+import { toast } from 'sonner';
 
 export default function SyncStatusPanel() {
   const router = useRouter();
@@ -34,6 +34,7 @@ export default function SyncStatusPanel() {
   // Redirect on session expiry via Next.js router
   useEffect(() => {
     if (sessionExpired) {
+      toast.error('Session expired. Please sign in again.');
       router.replace('/');
     }
   }, [sessionExpired, router]);
@@ -81,8 +82,6 @@ export default function SyncStatusPanel() {
   // ─── Main panel ────────────────────────────────────────────────────────────
 
   return (
-    <>
-    {sessionExpired && <Toast message="Session expired. Please sign in again." variant="error" />}
     <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-4 space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -153,6 +152,5 @@ export default function SyncStatusPanel() {
         )}
       </div>
     </div>
-    </>
   );
 }

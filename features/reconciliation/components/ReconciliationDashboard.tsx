@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { AlertTriangle, X } from 'lucide-react';
-import { Toast } from '@/components/ui/Toast';
+import { toast } from 'sonner';
 import ReconciliationOverviewPanel from './ReconciliationOverviewPanel';
 import AnomalyListView from './AnomalyListView';
 import ValidationRulesEditor from './ValidationRulesEditor';
@@ -43,7 +43,6 @@ export default function ReconciliationDashboard() {
   const [anomaliesPrompt, setAnomaliesPrompt] = useState<{ count: number; networkId: string } | null>(null);
 
   // Resolved toast network name
-  const [resolvedToastNetwork, setResolvedToastNetwork] = useState<string | null>(null);
 
   // Mount initial tab from URL (e.g. deep-link on page load)
   useEffect(() => {
@@ -80,7 +79,7 @@ export default function ReconciliationDashboard() {
   };
 
   const handleAllResolved = useCallback((networkId: string) => {
-    setResolvedToastNetwork(networkId);
+    toast.success(`All anomalies resolved for ${networkId}!`);
   }, []);
 
   return (
@@ -147,14 +146,6 @@ export default function ReconciliationDashboard() {
         )}
       </div>
 
-      {/* Resolved toast */}
-      {resolvedToastNetwork && (
-        <Toast
-          message={`All anomalies resolved for ${resolvedToastNetwork}!`}
-          variant="success"
-          onClose={() => setResolvedToastNetwork(null)}
-        />
-      )}
     </div>
   );
 }

@@ -8,7 +8,7 @@ import MasterEmailToggle from './MasterEmailToggle';
 import DeliveryEmailField from './DeliveryEmailField';
 import SendTestButton from './SendTestButton';
 import EmailLogTable from './EmailLogTable';
-import { Toast } from '@/components/ui/Toast';
+import { toast } from 'sonner';
 
 // ─── Notification type definitions ───────────────────────────────────────────
 
@@ -119,8 +119,6 @@ export default function EmailAlertPreferencesSection() {
   // Email delivery history
   const [historyOpen, setHistoryOpen] = useState(false);
 
-  // App-level toast
-  const [testToast, setTestToast] = useState<string | null>(null);
 
   // Load preferences on mount
   useEffect(() => {
@@ -213,7 +211,7 @@ export default function EmailAlertPreferencesSection() {
       if (res.ok) {
         const now = new Date().toISOString();
         setLastTestSentAt(now);
-        setTestToast(`Test email sent to ${alertEmail}`);
+        toast.success(`Test email sent to ${alertEmail}`);
       }
     } finally {
       setTestLoading(false);
@@ -344,14 +342,6 @@ export default function EmailAlertPreferencesSection() {
         )}
       </div>
 
-      {/* App-level toast after test send */}
-      {testToast && (
-        <Toast
-          message={testToast}
-          variant="success"
-          onClose={() => setTestToast(null)}
-        />
-      )}
     </div>
   );
 }

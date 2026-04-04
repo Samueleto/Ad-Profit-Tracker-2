@@ -8,7 +8,7 @@ import {
 } from 'recharts';
 import { format } from 'date-fns';
 import { ChevronDown, Loader2, RefreshCw, AlertCircle, Copy, Check } from 'lucide-react';
-import { Toast } from '@/components/ui/Toast';
+import { toast } from 'sonner';
 import GeoCountryDrilldownModal from '@/features/geo-breakdown/components/GeoCountryDrilldownModal';
 
 const NETWORKS = ['exoclick', 'rollerads', 'zeydoo', 'propush'] as const;
@@ -273,7 +273,6 @@ function NetworkTabPanel({
   const [error, setError] = useState(false);
   const [insightsOpen, setInsightsOpen] = useState(false);
   const [syncing, setSyncing] = useState(false);
-  const [syncToast, setSyncToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null);
 
   const fetchStats = useCallback(async () => {
     if (!dateFrom || !dateTo) return;
@@ -293,21 +292,20 @@ function NetworkTabPanel({
 
   const handleSync = async () => {
     setSyncing(true);
-    setSyncToast(null);
     try {
       const res = await authFetch('/api/sync/manual', {
         method: 'POST',
         body: JSON.stringify({ networkId }),
       });
       if (res.ok) {
-        setSyncToast({ message: `${NETWORK_LABELS[networkId]} synced successfully.`, variant: 'success' });
+        toast.success(`${NETWORK_LABELS[networkId]} synced successfully.`);
         fetchStats();
       } else {
         const data = await res.json().catch(() => ({}));
-        setSyncToast({ message: data.error ?? 'Sync failed — please try again.', variant: 'error' });
+        toast.error(data.error ?? 'Sync failed — please try again.');
       }
     } catch {
-      setSyncToast({ message: 'Sync failed — please try again.', variant: 'error' });
+      toast.error('Sync failed — please try again.');
     } finally { setSyncing(false); }
   };
 
@@ -326,9 +324,6 @@ function NetworkTabPanel({
 
   return (
     <div className="space-y-5">
-      {syncToast && (
-        <Toast message={syncToast.message} variant={syncToast.variant} onClose={() => setSyncToast(null)} />
-      )}
       {/* Sync button */}
       <div className="flex justify-end">
         <button onClick={handleSync} disabled={syncing || loading}

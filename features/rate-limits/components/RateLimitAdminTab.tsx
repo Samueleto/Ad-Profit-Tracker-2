@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { Loader2, AlertCircle, RefreshCw, AlertTriangle, CheckCircle } from 'lucide-react';
-import { Toast } from '@/components/ui/Toast';
+import { toast } from 'sonner';
 import { useRateLimitStatus, useRateLimitReset } from '../hooks';
 
 const NETWORKS = ['exoclick', 'rollerads', 'zeydoo', 'propush'] as const;
@@ -28,23 +28,19 @@ interface UserQuota {
 export default function RateLimitAdminTab() {
   const [networkId, setNetworkId] = useState<NetworkId>('exoclick');
   const [scope, setScope] = useState<ResetScope>('outbound');
-  const [successToast, setSuccessToast] = useState(false);
-  const [errorToast, setErrorToast] = useState(false);
 
   const { networks, userQuotas, loading, error, refetch, polledAt } = useRateLimitStatus();
 
   const { reset, loading: resetting, error: resetError } = useRateLimitReset(() => {
-    setSuccessToast(true);
+    toast.success('Rate limit reset successfully.');
     refetch();
   });
 
   const handleReset = async () => {
-    setErrorToast(false);
-    setSuccessToast(false);
     try {
       await reset(networkId, scope);
     } catch {
-      setErrorToast(true);
+      toast.error(resetError ?? 'Reset failed.');
     }
   };
 
@@ -53,13 +49,6 @@ export default function RateLimitAdminTab() {
 
   return (
     <div className="space-y-6">
-      {successToast && (
-        <Toast message="Rate limit reset successfully." variant="success" onClose={() => setSuccessToast(false)} />
-      )}
-      {errorToast && (
-        <Toast message={resetError ?? 'Reset failed.'} variant="error" onClose={() => setErrorToast(false)} />
-      )}
-
       {/* Current status */}
       <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl p-4 space-y-4">
         <div className="flex items-center justify-between">
@@ -202,7 +191,7 @@ export default function RateLimitAdminTab() {
             Reset Rate Limits
           </button>
         </div>
-        {resetError && !errorToast && (
+        {resetError && (
           <p className="text-xs text-red-600 dark:text-red-400">{resetError}</p>
         )}
       </div>

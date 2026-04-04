@@ -12,7 +12,6 @@ import { useDashboardStore } from '@/store/dashboardStore';
 import { useDateRangeStore } from '@/store/dateRangeStore';
 import { Download, ChevronDown } from 'lucide-react';
 import { useMyPermissions, checkPermission } from '@/features/rbac/hooks/useRbac';
-import { Toast } from '@/components/ui/Toast';
 import ExoClickNetworkTab from '@/features/exoclick/components/ExoClickNetworkTab';
 import RollerAdsNetworkTab from '@/features/rollerads/components/RollerAdsNetworkTab';
 import ZeydooDashboard from '@/features/zeydoo/components/ZeydooDashboard';
@@ -28,6 +27,7 @@ import HistoricalDataSection from '@/features/historical-data/components/Histori
 import ErrorMonitoringTab from '@/features/error-handling/components/ErrorMonitoringTab';
 import ErrorSummaryWidget from '@/features/error-handling/components/ErrorSummaryWidget';
 import PropushNetworkTab from '@/features/propush/components/PropushNetworkTab';
+import { toast } from 'sonner';
 
 type DashboardTab = 'overview' | 'compare' | 'benchmarks' | 'exoclick' | 'rollerads' | 'zeydoo' | 'propush' | 'api-explorer' | 'error-monitoring';
 
@@ -59,6 +59,7 @@ export default function DashboardPage() {
   // Show welcome toast after invitation acceptance, then remove the param from URL
   useEffect(() => {
     if (welcomeWorkspace) {
+      toast.success(`Welcome to ${welcomeWorkspace}!`);
       router.replace('/dashboard');
     }
   }, [welcomeWorkspace, router]);
@@ -225,10 +226,6 @@ export default function DashboardPage() {
       {/* Export Modal */}
       {exportModalOpen && <ExportModal onClose={() => setExportModalOpen(false)} />}
 
-      {/* Welcome toast after invitation acceptance */}
-      {welcomeWorkspace && (
-        <Toast message={`Welcome to ${welcomeWorkspace}!`} variant="success" />
-      )}
     </div>
   );
 }
