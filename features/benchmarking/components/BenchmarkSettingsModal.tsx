@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { getAuth } from 'firebase/auth';
 import { X, Loader2, RotateCcw } from 'lucide-react';
+import { toast } from 'sonner';
 import { formatDistanceToNow } from 'date-fns';
 
 type BenchMetric = 'roi' | 'ctr' | 'cpm' | 'revenue' | 'cost' | 'impressions' | 'clicks';
@@ -65,7 +66,6 @@ export default function BenchmarkSettingsModal({ onClose, onSaved }: BenchmarkSe
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     authFetch('/api/benchmarks/settings')
@@ -146,9 +146,8 @@ export default function BenchmarkSettingsModal({ onClose, onSaved }: BenchmarkSe
         body: JSON.stringify(body),
       });
       if (res.ok) {
-        setToast('Settings saved');
+        toast.success('Settings saved');
         setLastUpdated(new Date().toISOString());
-        setTimeout(() => setToast(null), 3000);
         onSaved();
       }
     } finally {
@@ -270,12 +269,6 @@ export default function BenchmarkSettingsModal({ onClose, onSaved }: BenchmarkSe
           </div>
         </div>
 
-        {/* Toast */}
-        {toast && (
-          <div className="absolute bottom-20 left-1/2 -translate-x-1/2 bg-green-600 text-white text-sm px-4 py-2 rounded-lg shadow">
-            {toast}
-          </div>
-        )}
       </div>
     </div>
   );
