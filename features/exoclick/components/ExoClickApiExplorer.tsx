@@ -4,10 +4,15 @@ import { useState } from 'react';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { useExoClickRawResponse } from '../hooks/useExoClickStats';
 
-export default function ExoClickApiExplorer() {
+interface ExoClickApiExplorerProps {
+  onGoToSync?: () => void;
+}
+
+export default function ExoClickApiExplorer({ onGoToSync }: ExoClickApiExplorerProps) {
   const [date, setDate] = useState(() => new Date().toISOString().split('T')[0]);
   const { records, fieldSchema, isLoading, error, refetch } = useExoClickRawResponse(date);
-  const hasData = records !== null && records !== undefined;
+  const hasData = records !== null && records !== undefined && !(error);
+  const errorStatus = (error as { status?: number } | undefined)?.status;
 
   return (
     <div className="space-y-4">
@@ -28,7 +33,23 @@ export default function ExoClickApiExplorer() {
         </div>
       )}
 
-      {error && (
+      {error && errorStatus === 404 && (
+        <div className="text-center py-8 space-y-3">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            No data for this date — try syncing this date range first.
+          </p>
+          {onGoToSync && (
+            <button
+              onClick={onGoToSync}
+              className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              Go to Sync tab →
+            </button>
+          )}
+        </div>
+      )}
+
+      {error && errorStatus !== 404 && (
         <div className="flex items-center gap-2 text-sm text-red-500">
           <AlertCircle className="w-4 h-4" />
           {(error as { message?: string }).message ?? 'Error loading response'}

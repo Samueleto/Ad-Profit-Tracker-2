@@ -120,7 +120,7 @@ export default function ExoClickNetworkTab() {
       )}
       {activeTab === 'explorer' && (
         <Section title="ExoClick — API Explorer">
-          <ExoClickApiExplorer />
+          <ExoClickApiExplorer onGoToSync={() => handleTabChange('sync')} />
         </Section>
       )}
     </div>

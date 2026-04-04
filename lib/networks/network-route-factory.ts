@@ -149,7 +149,10 @@ export function makeSyncHandler(networkId: NetworkId) {
 
       const apiKey = await getApiKey(uid, networkId);
       if (!apiKey) {
-        return NextResponse.json({ error: "API key not configured for this network" }, { status: 400 });
+        return NextResponse.json(
+          { error: "no_api_key", message: "No API key configured for this network. Add one in settings." },
+          { status: 404 }
+        );
       }
 
       const syncDate = dateFrom || new Date().toISOString().split("T")[0];
@@ -159,12 +162,21 @@ export function makeSyncHandler(networkId: NetworkId) {
       try {
         rawData = await fetchNetworkStats(networkId, apiKey, syncDate, endDate);
       } catch (fetchError) {
+        const errMsg = (fetchError as Error).message;
+        // Update networkConfig with failed status — best effort, don't block response
+        adminDb
+          .collection("users").doc(uid).collection("networkConfigs").doc(networkId)
+          .update({ lastSyncStatus: "failed", lastSyncError: errMsg })
+          .catch(() => {});
         await createAuditLog(uid, "sync_failed", networkId, {
-          error: (fetchError as Error).message,
+          error: errMsg,
           dateFrom: syncDate,
           dateTo: endDate,
         });
-        return NextResponse.json({ error: "Failed to fetch data from network API" }, { status: 502 });
+        return NextResponse.json(
+          { error: "network_api_error", message: `${networkId} API returned an error — please try again later.` },
+          { status: 502 }
+        );
       }
 
       // Sanitize raw response — strip fields with sensitive names before storing
@@ -312,7 +324,10 @@ export function makeRawResponseHandler(networkId: NetworkId) {
         .get();
 
       if (!rawDoc.exists) {
-        return NextResponse.json({ error: "No raw response available" }, { status: 404 });
+        return NextResponse.json(
+          { error: "no_data_for_date", message: "No data found for this date. Try syncing this date range first." },
+          { status: 404 }
+        );
       }
 
       return NextResponse.json(serializeDoc(rawDoc));
