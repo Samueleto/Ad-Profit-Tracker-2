@@ -2,13 +2,13 @@
 
 import { useState } from 'react';
 import { Loader2, AlertCircle } from 'lucide-react';
-import { useZeydooRawResponse } from '../hooks/useZeydooStats';
+import { usePropushRawResponse } from '../hooks/usePropushStats';
 
-interface ZeydooRawExplorerProps {
+interface PropushRawExplorerProps {
   onGoToSync?: () => void;
 }
 
-export default function ZeydooRawExplorer({ onGoToSync }: ZeydooRawExplorerProps) {
+export default function PropushRawExplorer({ onGoToSync }: PropushRawExplorerProps) {
   const [date, setDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 1);
@@ -16,11 +16,11 @@ export default function ZeydooRawExplorer({ onGoToSync }: ZeydooRawExplorerProps
   });
   const [fetched, setFetched] = useState(false);
 
-  const { data, schema, isLoading, error, fetch: fetchRaw } = useZeydooRawResponse();
+  const { data, schema, isLoading, error, fetch: fetchRaw } = usePropushRawResponse();
   const d = data as Record<string, unknown> | null;
   const records = (d?.records ?? d) as unknown[] | null;
 
-  const status = (error as unknown as { status?: number } | null)?.status;
+  const errStatus = error?.status;
 
   const handleFetch = () => {
     setFetched(true);
@@ -49,7 +49,7 @@ export default function ZeydooRawExplorer({ onGoToSync }: ZeydooRawExplorerProps
         </div>
       )}
 
-      {error && status === 404 && (
+      {error && errStatus === 404 && (
         <div className="text-center py-8 space-y-3">
           <p className="text-sm text-gray-500 dark:text-gray-400">
             No data for this date — try syncing this date range first.
@@ -65,7 +65,7 @@ export default function ZeydooRawExplorer({ onGoToSync }: ZeydooRawExplorerProps
         </div>
       )}
 
-      {error && status !== 404 && (
+      {error && errStatus !== 404 && (
         <div className="flex items-center gap-2 text-sm text-red-500">
           <AlertCircle className="w-4 h-4" />
           Failed to load raw response.

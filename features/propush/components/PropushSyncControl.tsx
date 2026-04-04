@@ -9,17 +9,17 @@ function mapSyncError(status: number, body: Record<string, unknown>): string {
   switch (status) {
     case 400:
       if (String(body.error ?? '').includes('network') || String(body.message ?? '').includes('disabled')) {
-        return 'Zeydoo is currently disabled. Enable it in your network settings.';
+        return 'Propush is currently disabled. Enable it in your network settings.';
       }
       return 'Please check your date range — dates must be valid and within 90 days.';
     case 401:
       return '__session_expired__';
     case 404:
-      return 'No Zeydoo API key found. Add your API key in the network settings first.';
+      return 'No Propush API key found. Add your API key in the network settings first.';
     case 429:
       return "You've hit the sync limit (10/hour). Please wait before syncing again.";
     case 502:
-      return "Zeydoo's API is currently unavailable. Try again in a few minutes.";
+      return "Propush's API is currently unavailable. Try again in a few minutes.";
     default:
       return 'Something went wrong on our end. Please try again.';
   }
@@ -31,11 +31,11 @@ function yesterday(): string {
   return d.toISOString().split('T')[0];
 }
 
-interface ZeydooSyncControlProps {
+interface PropushSyncControlProps {
   onSyncComplete?: () => void;
 }
 
-export default function ZeydooSyncControl({ onSyncComplete }: ZeydooSyncControlProps) {
+export default function PropushSyncControl({ onSyncComplete }: PropushSyncControlProps) {
   const router = useRouter();
   const [dateFrom, setDateFrom] = useState(yesterday);
   const [dateTo, setDateTo] = useState(yesterday);
@@ -44,7 +44,7 @@ export default function ZeydooSyncControl({ onSyncComplete }: ZeydooSyncControlP
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const doRequest = async (token: string | undefined) =>
-    fetch('/api/networks/zeydoo/sync', {
+    fetch('/api/networks/propush/sync', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -106,14 +106,14 @@ export default function ZeydooSyncControl({ onSyncComplete }: ZeydooSyncControlP
             className="px-3 py-1.5 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-800 dark:text-white disabled:opacity-50" />
         </div>
         <button onClick={handleSync} disabled={status === 'loading'}
-          className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-green-600 hover:bg-green-700 text-white rounded-lg disabled:opacity-50 transition-colors">
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 transition-colors">
           {status === 'loading' ? <><Loader2 className="w-4 h-4 animate-spin" /> Syncing…</> : 'Sync Now'}
         </button>
       </div>
 
       <div className="flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">
         <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-        Zeydoo allows up to 10 syncs per hour. Repeated syncs for the same date range may be rate-limited.
+        Propush allows up to 10 syncs per hour. Repeated syncs for the same date range may be rate-limited.
       </div>
 
       <div className="flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">

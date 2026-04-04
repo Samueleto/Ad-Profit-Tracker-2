@@ -27,6 +27,7 @@ import ScheduledSyncDashboard from '@/features/sync/components/ScheduledSyncDash
 import HistoricalDataSection from '@/features/historical-data/components/HistoricalDataSection';
 import ErrorMonitoringTab from '@/features/error-handling/components/ErrorMonitoringTab';
 import ErrorSummaryWidget from '@/features/error-handling/components/ErrorSummaryWidget';
+import PropushNetworkTab from '@/features/propush/components/PropushNetworkTab';
 
 type DashboardTab = 'overview' | 'compare' | 'benchmarks' | 'exoclick' | 'rollerads' | 'zeydoo' | 'propush' | 'api-explorer' | 'error-monitoring';
 
@@ -215,11 +216,7 @@ export default function DashboardPage() {
 
       {activeTab === 'zeydoo' && <ZeydooDashboard />}
 
-      {activeTab === 'propush' && (
-        <div className="p-8 text-center text-sm text-gray-500 dark:text-gray-400">
-          Propush network details coming soon.
-        </div>
-      )}
+      {activeTab === 'propush' && <PropushNetworkTab />}
 
       {activeTab === 'api-explorer' && <ApiExplorerTab />}
 

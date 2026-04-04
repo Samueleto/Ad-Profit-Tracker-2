@@ -1,11 +1,10 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import ZeydooLatestCard from './ZeydooLatestCard';
-import ZeydooStatsOverview from './ZeydooStatsOverview';
-import ZeydooTopCountries from './ZeydooTopCountries';
-import ZeydooSyncControl from './ZeydooSyncControl';
-import ZeydooRawExplorer from './ZeydooRawExplorer';
+import PropushLatestCard from './PropushLatestCard';
+import PropushStatsOverview from './PropushStatsOverview';
+import PropushSyncControl from './PropushSyncControl';
+import PropushRawExplorer from './PropushRawExplorer';
 
 function defaultRange() {
   const to = new Date();
@@ -14,9 +13,9 @@ function defaultRange() {
   return { from: from.toISOString().split('T')[0], to: to.toISOString().split('T')[0] };
 }
 
-type ZeydooTab = 'overview' | 'sync' | 'explorer';
+type PropushTab = 'overview' | 'sync' | 'explorer';
 
-const TABS: { id: ZeydooTab; label: string }[] = [
+const TABS: { id: PropushTab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
   { id: 'sync', label: 'Sync' },
   { id: 'explorer', label: 'API Explorer' },
@@ -31,8 +30,8 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   );
 }
 
-export default function ZeydooNetworkTab() {
-  const [activeTab, setActiveTab] = useState<ZeydooTab>('overview');
+export default function PropushNetworkTab() {
+  const [activeTab, setActiveTab] = useState<PropushTab>('overview');
   const init = defaultRange();
   const [dateFrom, setDateFrom] = useState(init.from);
   const [dateTo, setDateTo] = useState(init.to);
@@ -50,7 +49,7 @@ export default function ZeydooNetworkTab() {
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               className={`px-4 py-2 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${
                 activeTab === tab.id
-                  ? 'border-green-500 text-green-600 dark:text-green-400'
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
                   : 'border-transparent text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300 hover:border-gray-300'
               }`}
             >
@@ -62,27 +61,24 @@ export default function ZeydooNetworkTab() {
 
       {activeTab === 'overview' && (
         <div className="space-y-4">
-          <Section title="Zeydoo — Latest Stats">
-            <ZeydooLatestCard onSync={() => setActiveTab('sync')} />
+          <Section title="Propush — Latest Stats">
+            <PropushLatestCard onSync={() => setActiveTab('sync')} />
           </Section>
-          <Section title="Zeydoo — Historical Stats">
-            <ZeydooStatsOverview dateFrom={dateFrom} dateTo={dateTo} onDateChange={handleDateChange} />
-          </Section>
-          <Section title="Top Countries">
-            <ZeydooTopCountries dateFrom={dateFrom} dateTo={dateTo} />
+          <Section title="Propush — Historical Stats">
+            <PropushStatsOverview dateFrom={dateFrom} dateTo={dateTo} onDateChange={handleDateChange} />
           </Section>
         </div>
       )}
 
       {activeTab === 'sync' && (
-        <Section title="Zeydoo — Manual Sync">
-          <ZeydooSyncControl onSyncComplete={() => setActiveTab('overview')} />
+        <Section title="Propush — Manual Sync">
+          <PropushSyncControl onSyncComplete={() => setActiveTab('overview')} />
         </Section>
       )}
 
       {activeTab === 'explorer' && (
-        <Section title="Zeydoo — API Explorer">
-          <ZeydooRawExplorer onGoToSync={() => setActiveTab('sync')} />
+        <Section title="Propush — API Explorer">
+          <PropushRawExplorer onGoToSync={() => setActiveTab('sync')} />
         </Section>
       )}
     </div>
