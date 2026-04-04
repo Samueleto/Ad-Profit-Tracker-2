@@ -10,6 +10,7 @@ interface ApiKeyCardProps {
   status: 'connected' | 'not_connected';
   updatedAt: string | null;
   isSubmitting?: boolean;
+  saveError?: string | null;
   onSave: (networkId: string, key: string) => Promise<void>;
   onDisconnect: (networkId: string) => Promise<void>;
 }
@@ -24,6 +25,7 @@ export default function ApiKeyCard({
   status,
   updatedAt,
   isSubmitting = false,
+  saveError,
   onSave,
   onDisconnect,
 }: ApiKeyCardProps) {
@@ -73,8 +75,8 @@ export default function ApiKeyCard({
             {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
         </div>
-        {errors.apiKey && (
-          <p className="mt-1 text-xs text-red-500">{errors.apiKey.message}</p>
+        {(errors.apiKey || saveError) && (
+          <p className="mt-1 text-xs text-red-500">{errors.apiKey?.message ?? saveError}</p>
         )}
       </div>
       <div className="flex gap-2">

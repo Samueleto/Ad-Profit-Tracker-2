@@ -32,7 +32,7 @@ export async function DELETE(request: Request) {
 
     return NextResponse.json({ networkId, status: "disconnected" });
   } catch (error) {
-    console.error("keys/delete error:", error);
+    console.error("[keys/delete] Firestore error", { uid, ts: new Date().toISOString(), error });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }
