@@ -2,7 +2,8 @@
 
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
-import { ChevronDown, Loader2, CheckCircle, AlertTriangle } from 'lucide-react';
+import { toast } from 'sonner';
+import { ChevronDown, Loader2, AlertTriangle } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
 import type { ExportPreviewResponse } from '@/features/excel-export/types';
 import { ALLOWED_SECTIONS, type PdfSection, type PdfExportRequest } from '../types';
@@ -40,7 +41,6 @@ export default function PdfExportTab({ dateFrom, dateTo, preview, previewLoading
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
   const [errorType, setErrorType] = useState<number | null>(null);
-  const [toast, setToast] = useState<string | null>(null);
 
   const getToken = async (refresh = false) => {
     const auth = getAuth();
@@ -134,7 +134,7 @@ export default function PdfExportTab({ dateFrom, dateTo, preview, previewLoading
         setTimeout(() => URL.revokeObjectURL(url), 5000);
       }
 
-      setToast('PDF export complete — file downloaded');
+      toast.success('PDF export complete — file downloaded');
       setTimeout(() => onClose(), 1500);
     } finally {
       setExporting(false);
@@ -280,14 +280,6 @@ export default function PdfExportTab({ dateFrom, dateTo, preview, previewLoading
       )}
       {exportError && errorType === 404 && (
         <p className="text-xs text-amber-600 dark:text-amber-400">{exportError}</p>
-      )}
-
-      {/* Toast */}
-      {toast && (
-        <div className="flex items-center gap-2 px-3 py-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg">
-          <CheckCircle className="w-3.5 h-3.5 text-green-500" />
-          <span className="text-xs text-green-700 dark:text-green-300">{toast}</span>
-        </div>
       )}
 
       {/* Action bar */}
