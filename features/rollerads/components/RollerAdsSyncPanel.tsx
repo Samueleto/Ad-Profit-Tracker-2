@@ -1,8 +1,29 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Loader2, CheckCircle, AlertCircle, Info } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
+
+function mapSyncError(status: number, body: Record<string, unknown>): string {
+  switch (status) {
+    case 400:
+      if (String(body.error ?? '').includes('network') || String(body.message ?? '').includes('disabled')) {
+        return 'RollerAds is currently disabled. Enable it in your network settings.';
+      }
+      return 'Please check your date range — dates must be valid and within 90 days.';
+    case 401:
+      return '__session_expired__';
+    case 404:
+      return 'No RollerAds API key found. Add your API key in the network settings first.';
+    case 429:
+      return "You've hit the sync limit (10/hour). Please wait before syncing again.";
+    case 502:
+      return "RollerAds' API is currently unavailable. Try again in a few minutes.";
+    default:
+      return 'Something went wrong on our end. Please try again.';
+  }
+}
 
 function yesterday(): string {
   const d = new Date();
@@ -21,11 +42,22 @@ interface SyncResult {
 }
 
 export default function RollerAdsSyncPanel({ onSyncSuccess }: { onSyncSuccess?: () => void }) {
+  const router = useRouter();
   const [dateFrom, setDateFrom] = useState(yesterday);
   const [dateTo, setDateTo] = useState(yesterday);
   const [status, setStatus] = useState<SyncStatus>('idle');
   const [result, setResult] = useState<SyncResult | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const doRequest = async (token: string | undefined) =>
+    fetch('/api/networks/rollerads/sync', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ dateFrom, dateTo }),
+    });
 
   const handleSync = async () => {
     setStatus('loading');
@@ -33,18 +65,25 @@ export default function RollerAdsSyncPanel({ onSyncSuccess }: { onSyncSuccess?: 
     setErrorMsg(null);
     try {
       const auth = getAuth();
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch('/api/networks/rollerads/sync', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ dateFrom, dateTo }),
-      });
+      let token = await auth.currentUser?.getIdToken();
+      let res = await doRequest(token);
+
+      // 401 — try token refresh once
+      if (res.status === 401) {
+        token = await auth.currentUser?.getIdToken(true).catch(() => undefined);
+        res = await doRequest(token);
+        if (res.status === 401) {
+          router.replace('/');
+          return;
+        }
+      }
+
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? `Sync failed (${res.status})`);
+        const msg = mapSyncError(res.status, body);
+        setErrorMsg(msg);
+        setStatus('error');
+        return;
       }
       const data = await res.json();
       setResult({
@@ -56,8 +95,8 @@ export default function RollerAdsSyncPanel({ onSyncSuccess }: { onSyncSuccess?: 
       });
       setStatus('success');
       onSyncSuccess?.();
-    } catch (err) {
-      setErrorMsg(err instanceof Error ? err.message : 'Sync failed');
+    } catch {
+      setErrorMsg('Something went wrong on our end. Please try again.');
       setStatus('error');
     }
   };
@@ -94,6 +133,11 @@ export default function RollerAdsSyncPanel({ onSyncSuccess }: { onSyncSuccess?: 
             <><Loader2 className="w-4 h-4 animate-spin" /> Syncing…</>
           ) : 'Sync Now'}
         </button>
+      </div>
+
+      <div className="flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">
+        <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+        RollerAds allows up to 10 syncs per hour. Repeated syncs for the same date range may be rate-limited.
       </div>
 
       <div className="flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">

@@ -120,7 +120,7 @@ export default function RollerAdsNetworkTab() {
       )}
       {activeTab === 'explorer' && (
         <Section title="RollerAds — API Explorer">
-          <RollerAdsApiExplorer />
+          <RollerAdsApiExplorer onGoToSync={() => handleTabChange('sync')} />
         </Section>
       )}
     </div>
