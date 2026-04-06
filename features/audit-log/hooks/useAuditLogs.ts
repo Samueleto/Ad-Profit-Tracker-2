@@ -114,7 +114,7 @@ export function useAuditLogs(): UseAuditLogsResult {
     setError(null);
     try {
       const qs = buildQueryParams(filters, currentCursor);
-      const { res, sessionExpired } = await authFetch(`/api/audit/logs${qs ? `?${qs}` : ''}`);
+      const { res, sessionExpired } = await authFetch(`/api/audit-logs${qs ? `?${qs}` : ''}`);
       if (fetchId !== fetchIdRef.current) return;
       if (sessionExpired) { setAuthExpired(true); return; }
       if (res.status === 403) { setAccessDenied(true); return; }

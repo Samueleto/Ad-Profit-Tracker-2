@@ -29,7 +29,7 @@ export function useClearLogs(): UseClearLogsResult {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers.Authorization = `Bearer ${token}`;
 
-      let res = await fetch('/api/audit/logs/clear', { method: 'DELETE', headers });
+      let res = await fetch('/api/audit-logs/clear', { method: 'DELETE', headers });
 
       if (res.status === 401) {
         const freshToken = await auth.currentUser?.getIdToken(true).catch(() => null);
@@ -38,7 +38,7 @@ export function useClearLogs(): UseClearLogsResult {
           setClearError(err);
           throw new Error(err.message);
         }
-        res = await fetch('/api/audit/logs/clear', {
+        res = await fetch('/api/audit-logs/clear', {
           method: 'DELETE',
           headers: { ...headers, Authorization: `Bearer ${freshToken}` },
         });

@@ -38,7 +38,7 @@ export function useExportLogs(): UseExportLogsResult {
         if (filters.dateRange.preset) params.set('preset', filters.dateRange.preset);
         if (filters.searchText) params.set('search', filters.searchText);
         if (filters.status) params.set('status', filters.status);
-        return fetch(`/api/audit/logs/export?${params.toString()}`, {
+        return fetch(`/api/audit-logs/export?${params.toString()}`, {
           headers: { ...(t ? { Authorization: `Bearer ${t}` } : {}) },
         });
       };

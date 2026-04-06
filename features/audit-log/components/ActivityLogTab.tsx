@@ -72,7 +72,7 @@ export default function ActivityLogTab() {
     setLoadState('loading');
     setNextCursor(null);
     try {
-      const { res, sessionExpired } = await authFetch(`/api/audit/logs?${buildQuery(activeFilters)}`);
+      const { res, sessionExpired } = await authFetch(`/api/audit-logs?${buildQuery(activeFilters)}`);
       if (sessionExpired) { handleSessionExpired(); return; }
       if (res.status === 403) { setAccessDenied(true); return; }
       if (res.status === 429) {
@@ -108,7 +108,7 @@ export default function ActivityLogTab() {
     setLoadingMore(true);
     setLoadMoreError(false);
     try {
-      const { res, sessionExpired } = await authFetch(`/api/audit/logs?${buildQuery(filters, nextCursor)}`);
+      const { res, sessionExpired } = await authFetch(`/api/audit-logs?${buildQuery(filters, nextCursor)}`);
       if (sessionExpired) { handleSessionExpired(); return; }
       if (!res.ok) { setLoadMoreError(true); return; }
       const data: PaginatedLogsResponse = await res.json();
@@ -133,14 +133,14 @@ export default function ActivityLogTab() {
       if (filters.status) params.set('status', filters.status);
       if (filters.search) params.set('search', filters.search);
 
-      let res = await fetch(`/api/audit/logs/export?${params.toString()}`, {
+      let res = await fetch(`/api/audit-logs/export?${params.toString()}`, {
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });
 
       if (res.status === 401) {
         const freshToken = await auth.currentUser?.getIdToken(true).catch(() => null);
         if (!freshToken) { handleSessionExpired(); return; }
-        res = await fetch(`/api/audit/logs/export?${params.toString()}`, {
+        res = await fetch(`/api/audit-logs/export?${params.toString()}`, {
           headers: { Authorization: `Bearer ${freshToken}` },
         });
         if (res.status === 401) { handleSessionExpired(); return; }
@@ -170,7 +170,7 @@ export default function ActivityLogTab() {
   };
 
   const handleClearConfirm = async () => {
-    const { res, sessionExpired } = await authFetch('/api/audit/logs/clear', { method: 'DELETE' });
+    const { res, sessionExpired } = await authFetch('/api/audit-logs/clear', { method: 'DELETE' });
     if (sessionExpired) { handleSessionExpired(); return; }
     if (res.status === 429) {
       toast.warning('Too many requests — please wait a moment before trying again.');
