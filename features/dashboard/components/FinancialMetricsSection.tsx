@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
+import { toast } from 'sonner';
 import { TrendingUp, TrendingDown, Minus, RefreshCw, Loader2, Download } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, ReferenceLine,
@@ -12,9 +14,9 @@ import { useDashboardMetrics } from '../hooks/useDashboardMetrics';
 import type { Preset, KPIs } from '../hooks/useDashboardMetrics';
 
 // ─── Auth helper (used by ROICard only for its per-network breakdown) ─────────
-async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
+async function authFetch(path: string, init: RequestInit = {}, refresh = false): Promise<Response> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
+  const token = await auth.currentUser?.getIdToken(refresh);
   return fetch(path, {
     ...init,
     headers: {
@@ -78,6 +80,7 @@ interface ROICardProps {
 }
 
 function ROICard({ roi, roiChange, kpis, dateFrom, dateTo, loading }: ROICardProps) {
+  const router = useRouter();
   const [roiBreakdownOpen, setRoiBreakdownOpen] = useState(false);
   const [networkRows, setNetworkRows] = useState<Array<{ networkId: string; yield: number }>>([]);
   const [breakdownLoading, setBreakdownLoading] = useState(false);
@@ -86,12 +89,19 @@ function ROICard({ roi, roiChange, kpis, dateFrom, dateTo, loading }: ROICardPro
     if (!dateFrom || !dateTo) return;
     setBreakdownLoading(true);
     const params = new URLSearchParams({ dimension: 'network', dateFrom, dateTo });
-    authFetch(`/api/roi/breakdown?${params}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(d => { if (d) setNetworkRows(d.rows ?? d.networks ?? []); })
-      .catch(() => {})
-      .finally(() => setBreakdownLoading(false));
-  }, [dateFrom, dateTo]);
+    (async () => {
+      try {
+        let res = await authFetch(`/api/roi/breakdown?${params}`);
+        if (res.status === 401) {
+          res = await authFetch(`/api/roi/breakdown?${params}`, {}, true);
+          if (res.status === 401) { toast.error('Session expired. Please sign in again.'); router.replace('/'); return; }
+        }
+        if (!res.ok) return;
+        const d = await res.json();
+        setNetworkRows(d.rows ?? d.networks ?? []);
+      } catch {} finally { setBreakdownLoading(false); }
+    })();
+  }, [dateFrom, dateTo, router]);
 
   if (loading) {
     return (

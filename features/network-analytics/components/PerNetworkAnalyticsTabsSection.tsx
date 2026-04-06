@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
 import {
   AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine,
@@ -55,9 +56,9 @@ interface NetworkStatus {
   lastSyncStatus: 'success' | 'failed' | 'never' | null;
 }
 
-async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
+async function authFetch(path: string, init: RequestInit = {}, refresh = false): Promise<Response> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
+  const token = await auth.currentUser?.getIdToken(refresh);
   return fetch(path, {
     ...init,
     headers: {
@@ -99,6 +100,7 @@ const FIELD_MAPS: Record<Network, Array<{ api: string; app: string; type: string
 };
 
 function NetworkAccordion({ networkId }: { networkId: Network }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [rawData, setRawData] = useState<string | null>(null);
   const [rawLoading, setRawLoading] = useState(false);
@@ -114,16 +116,21 @@ function NetworkAccordion({ networkId }: { networkId: Network }) {
       const yesterday = new Date();
       yesterday.setDate(yesterday.getDate() - 1);
       const date = format(yesterday, 'yyyy-MM-dd');
-      const res = await authFetch(`/api/networks/${networkId}/raw-response?date=${date}`);
+      const rawPath = `/api/networks/${networkId}/raw-response?date=${date}`;
+      let res = await authFetch(rawPath);
+      if (res.status === 401) {
+        res = await authFetch(rawPath, {}, true);
+        if (res.status === 401) { toast.error('Session expired. Please sign in again.'); router.replace('/'); return; }
+      }
       if (res.status === 404) { setNoApiKey(false); setRawData(null); return; }
-      if (res.status === 403 || res.status === 401) { setNoApiKey(true); return; }
+      if (res.status === 403) { setNoApiKey(true); return; }
       if (!res.ok) { return; }
       const data = await res.json();
       if (data.noApiKey || data.error?.includes('key')) { setNoApiKey(true); return; }
       setRawData(JSON.stringify(data, null, 2));
       setFetchedAt(new Date().toLocaleTimeString());
     } finally { setRawLoading(false); }
-  }, [networkId]);
+  }, [networkId, router]);
 
   useEffect(() => {
     if (open && !rawData && !rawLoading) fetchRaw();
@@ -140,10 +147,12 @@ function NetworkAccordion({ networkId }: { networkId: Network }) {
   const handleFetchSample = async () => {
     setSampleLoading(true);
     try {
-      const res = await authFetch('/api/networks/config/test-connection', {
-        method: 'POST',
-        body: JSON.stringify({ networkId }),
-      });
+      const sampleInit: RequestInit = { method: 'POST', body: JSON.stringify({ networkId }) };
+      let res = await authFetch('/api/networks/config/test-connection', sampleInit);
+      if (res.status === 401) {
+        res = await authFetch('/api/networks/config/test-connection', sampleInit, true);
+        if (res.status === 401) { toast.error('Session expired. Please sign in again.'); router.replace('/'); return; }
+      }
       const data = await res.json();
       setSampleResult(JSON.stringify(data, null, 2));
     } finally { setSampleLoading(false); }
@@ -268,6 +277,7 @@ function NetworkTabPanel({
   dateTo: string;
   onCountryClick?: (countryCode: string, countryName: string, flagEmoji: string) => void;
 }) {
+  const router = useRouter();
   const [stats, setStats] = useState<NetworkStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -280,23 +290,29 @@ function NetworkTabPanel({
     setError(false);
     try {
       const params = new URLSearchParams({ networkId, dateFrom, dateTo });
-      const res = await authFetch(`/api/networks/stats?${params}`);
+      let res = await authFetch(`/api/networks/stats?${params}`);
+      if (res.status === 401) {
+        res = await authFetch(`/api/networks/stats?${params}`, {}, true);
+        if (res.status === 401) { toast.error('Session expired. Please sign in again.'); router.replace('/'); return; }
+      }
       if (!res.ok) { setError(true); return; }
       const data = await res.json();
       setStats(data);
     } catch { setError(true); }
     finally { setLoading(false); }
-  }, [networkId, dateFrom, dateTo]);
+  }, [networkId, dateFrom, dateTo, router]);
 
   useEffect(() => { fetchStats(); }, [fetchStats]);
 
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const res = await authFetch('/api/sync/manual', {
-        method: 'POST',
-        body: JSON.stringify({ networkId }),
-      });
+      const syncInit: RequestInit = { method: 'POST', body: JSON.stringify({ networkId }) };
+      let res = await authFetch('/api/sync/manual', syncInit);
+      if (res.status === 401) {
+        res = await authFetch('/api/sync/manual', syncInit, true);
+        if (res.status === 401) { toast.error('Session expired. Please sign in again.'); router.replace('/'); return; }
+      }
       if (res.ok) {
         toast.success(`${NETWORK_LABELS[networkId]} synced successfully.`);
         fetchStats();
@@ -471,14 +487,21 @@ interface PerNetworkAnalyticsTabsSectionProps {
 type TabId = Network | 'explorer';
 
 export default function PerNetworkAnalyticsTabsSection({ dateFrom, dateTo }: PerNetworkAnalyticsTabsSectionProps) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState<TabId>('exoclick');
   const [statuses, setStatuses] = useState<Record<string, string>>({});
   const [drilldown, setDrilldown] = useState<{ code: string; name: string; flag: string } | null>(null);
 
   useEffect(() => {
-    authFetch('/api/networks/stats?summary=true')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
+    (async () => {
+      try {
+        let res = await authFetch('/api/networks/stats?summary=true');
+        if (res.status === 401) {
+          res = await authFetch('/api/networks/stats?summary=true', {}, true);
+          if (res.status === 401) { toast.error('Session expired. Please sign in again.'); router.replace('/'); return; }
+        }
+        if (!res.ok) return;
+        const data = await res.json();
         if (data?.networks) {
           const map: Record<string, string> = {};
           for (const n of (data.networks as NetworkStatus[])) {
@@ -486,9 +509,9 @@ export default function PerNetworkAnalyticsTabsSection({ dateFrom, dateTo }: Per
           }
           setStatuses(map);
         }
-      })
-      .catch(() => {});
-  }, []);
+      } catch {}
+    })();
+  }, [router]);
 
   const statusDot = (networkId: Network) => {
     const s = statuses[networkId];
