@@ -4,6 +4,7 @@ import { adminDb } from "@/lib/firebase-admin/admin";
 import { verifyAuthToken } from "@/lib/firebase-admin/verify-token";
 import { isValidNetworkId } from "@/lib/constants";
 import { serializeDoc } from "@/lib/networks/network-helpers";
+import { computeRoi } from "@/lib/roi/formula";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -40,9 +41,37 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "No snapshot found for this date" }, { status: 404 });
     }
 
+    // Aggregate across all adStats docs for this date (may span multiple networks)
+    let totalRevenue = 0;
+    let totalCost = 0;
+    let totalImpressions = 0;
+    let totalClicks = 0;
+
+    snapshot.forEach((doc) => {
+      const d = doc.data();
+      totalRevenue += Number(d.revenue) || 0;
+      totalCost += Number(d.cost) || 0;
+      totalImpressions += Number(d.impressions) || 0;
+      totalClicks += Number(d.clicks) || 0;
+    });
+
+    const netProfit = totalRevenue - totalCost;
+    const roi = computeRoi(totalRevenue, totalCost) ?? 0;
+
+    // Also include the per-network breakdown for callers that need it
     const stats = snapshot.docs.map(serializeDoc).filter(Boolean);
 
-    return NextResponse.json({ date, networkId: networkId || null, stats });
+    return NextResponse.json({
+      date,
+      networkId: networkId || null,
+      revenue: totalRevenue,
+      cost: totalCost,
+      netProfit,
+      roi,
+      impressions: totalImpressions,
+      clicks: totalClicks,
+      stats,
+    });
   } catch (error) {
     console.error("GET /api/stats/snapshot error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
