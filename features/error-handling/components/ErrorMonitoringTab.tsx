@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { AlertTriangle, X } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
+import { toast } from 'sonner';
 import CircuitBreakerStatusPanel from './CircuitBreakerStatusPanel';
 import ErrorLogPanel from './ErrorLogPanel';
 import RetryStatePanel from './RetryStatePanel';
@@ -22,10 +23,17 @@ const BANNER_SESSION_KEY = 'error_monitoring_banner_dismissed';
 
 async function getCircuitStatus(): Promise<{ networksDegraded: number }> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
-  const res = await fetch('/api/errors/circuit-breaker/status', {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+  const doFetch = async (refresh: boolean) => {
+    const token = await auth.currentUser?.getIdToken(refresh);
+    return fetch('/api/errors/circuit-breaker/status', {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+  };
+  let res = await doFetch(false);
+  if (res.status === 401) {
+    res = await doFetch(true);
+    if (res.status === 401) { toast.error('Session expired. Please sign in again.'); window.location.replace('/'); return { networksDegraded: 0 }; }
+  }
   if (!res.ok) return { networksDegraded: 0 };
   const data = await res.json();
   return { networksDegraded: data?.summary?.networksDegraded ?? 0 };
