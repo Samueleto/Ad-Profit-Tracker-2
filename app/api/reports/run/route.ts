@@ -38,7 +38,7 @@ export async function POST(request: Request) {
       body.dateTo
     );
 
-    let statsQuery = adminDb.collection('adStats').where('userId', '==', uid) as FirebaseFirestore.Query;
+    let statsQuery = adminDb.collection('adStats').where('uid', '==', uid) as FirebaseFirestore.Query;
     statsQuery = statsQuery.where('date', '>=', resolvedFrom).where('date', '<=', resolvedTo);
 
     if (body.networks?.length > 0) {

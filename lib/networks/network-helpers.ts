@@ -90,7 +90,7 @@ export async function createAuditLog(
   details?: Record<string, unknown>
 ) {
   await adminDb.collection("auditLogs").add({
-    uid,
+    userId: uid,
     action,
     networkId,
     details: details || null,

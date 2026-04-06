@@ -31,7 +31,7 @@ export async function GET(request: Request) {
   try {
     let query = adminDb
       .collection("auditLogs")
-      .where("uid", "==", uid)
+      .where("userId", "==", uid)
       .where("action", "in", [
         "sync_completed",
         "sync_failed",
@@ -45,7 +45,7 @@ export async function GET(request: Request) {
     if (networkId && isValidNetworkId(networkId)) {
       query = adminDb
         .collection("auditLogs")
-        .where("uid", "==", uid)
+        .where("userId", "==", uid)
         .where("networkId", "==", networkId)
         .where("action", "in", [
           "sync_completed",

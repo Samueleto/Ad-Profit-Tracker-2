@@ -58,7 +58,7 @@ export async function POST(request: Request) {
 
       // Create audit log
       await adminDb.collection("auditLogs").add({
-        uid,
+        userId: uid,
         action: "sync_triggered",
         networkId,
         jobId: syncRef.id,
