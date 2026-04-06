@@ -13,6 +13,8 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100);
     const unreadOnly = searchParams.get('unreadOnly') === 'true';
+    // cursor is a numeric offset into the filtered array
+    const offset = Math.max(0, parseInt(searchParams.get('cursor') || '0', 10) || 0);
 
     const userDoc = await adminDb.collection('users').doc(uid).get();
     if (!userDoc.exists) return NextResponse.json({ notifications: [], unreadCount: 0, hasMore: false, nextCursor: null });
@@ -29,13 +31,15 @@ export async function GET(request: Request) {
 
     const total = notifications.length;
     const unreadCount = notifications.filter(n => !n.isRead).length;
-    const paginated = notifications.slice(0, limit);
+    const paginated = notifications.slice(offset, offset + limit);
+    const nextOffset = offset + limit;
+    const hasMore = nextOffset < total;
 
     return NextResponse.json({
       notifications: paginated,
       unreadCount,
-      hasMore: total > limit,
-      nextCursor: total > limit ? String(limit) : null,
+      hasMore,
+      nextCursor: hasMore ? String(nextOffset) : null,
     });
   } catch (error) {
     console.error('notifications GET error:', error);
