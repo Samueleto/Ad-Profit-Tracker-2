@@ -8,13 +8,16 @@ export async function GET(request: Request) {
   const uid = authResult.token.uid;
 
   try {
-    const snapshot = await adminDb
+    // Use count() — avoids fetching all docs just to get the total
+    const countSnap = await adminDb
       .collection("notifications")
       .where("uid", "==", uid)
-      .where("read", "==", false)
+      .where("isRead", "==", false)
+      .where("isDismissed", "==", false)
+      .count()
       .get();
 
-    return NextResponse.json({ count: snapshot.size });
+    return NextResponse.json({ count: countSnap.data().count });
   } catch (error) {
     console.error("GET /api/notifications/unread-count error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
