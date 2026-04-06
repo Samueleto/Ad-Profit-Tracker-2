@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
 import { AlertCircle, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 import type { ValidationRules } from '../types';
 
 const NETWORKS = ['exoclick', 'rollerads', 'zeydoo', 'propush'] as const;
@@ -31,9 +33,9 @@ interface NetworkRules {
   isCustom?: boolean;
 }
 
-async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
+async function authFetch(path: string, init: RequestInit = {}, refresh = false): Promise<Response> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
+  const token = await auth.currentUser?.getIdToken(refresh);
   return fetch(path, {
     ...init,
     headers: {
@@ -45,6 +47,7 @@ async function authFetch(path: string, init: RequestInit = {}): Promise<Response
 }
 
 export default function ValidationRulesEditor() {
+  const router = useRouter();
   const [networkRules, setNetworkRules] = useState<NetworkRules[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -57,13 +60,21 @@ export default function ValidationRulesEditor() {
     setLoading(true);
     setError(false);
     try {
-      const res = await authFetch('/api/reconciliation/rules');
+      let res = await authFetch('/api/reconciliation/rules');
+      if (res.status === 401) {
+        res = await authFetch('/api/reconciliation/rules', {}, true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (!res.ok) { setError(true); return; }
       const data = await res.json();
       setNetworkRules(data.networks ?? data.rules ?? NETWORKS.map(id => ({ networkId: id, rules: {}, isCustom: false })));
     } catch { setError(true); }
     finally { setLoading(false); }
-  }, []);
+  }, [router]);
 
   useEffect(() => { fetchRules(); }, [fetchRules]);
 
@@ -90,13 +101,20 @@ export default function ValidationRulesEditor() {
     if (!changed || Object.keys(changed).length === 0) return;
     setSaving(networkId);
     setSaveErrors(prev => ({ ...prev, [networkId]: '' }));
+    const saveInit = { method: 'PATCH', body: JSON.stringify({ networkId, rules: changed }) };
     try {
-      const res = await authFetch('/api/reconciliation/rules', {
-        method: 'PATCH',
-        body: JSON.stringify({ networkId, rules: changed }),
-      });
+      let res = await authFetch('/api/reconciliation/rules', saveInit);
+      if (res.status === 401) {
+        res = await authFetch('/api/reconciliation/rules', saveInit, true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (res.status === 429) { setSaveErrors(prev => ({ ...prev, [networkId]: 'Rate limit — try again.' })); return; }
       if (!res.ok) { setSaveErrors(prev => ({ ...prev, [networkId]: 'Save failed.' })); return; }
+      toast.success('Validation rules saved.');
       setEdits(prev => { const next = { ...prev }; delete next[networkId]; return next; });
       fetchRules();
     } finally { setSaving(null); }
