@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
 import { AlertCircle, CheckCircle, Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
+import { toast } from 'sonner';
 import { useRateLimitStatus } from '@/features/rate-limits/hooks';
 
 interface UserQuota { endpoint: string; remaining: number; resetAt: string | null; }
@@ -28,9 +30,9 @@ interface StatusData {
   networks: CircuitNetwork[];
 }
 
-async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
+async function authFetch(path: string, init: RequestInit = {}, refresh = false): Promise<Response> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
+  const token = await auth.currentUser?.getIdToken(refresh);
   return fetch(path, {
     ...init,
     headers: {
@@ -42,6 +44,7 @@ async function authFetch(path: string, init: RequestInit = {}): Promise<Response
 }
 
 export default function CircuitBreakerStatusPanel({ onResetSuccess }: { onResetSuccess?: () => void }) {
+  const router = useRouter();
   const [data, setData] = useState<StatusData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -56,23 +59,37 @@ export default function CircuitBreakerStatusPanel({ onResetSuccess }: { onResetS
     setLoading(true);
     setError(false);
     try {
-      const res = await authFetch('/api/errors/circuit-breaker/status');
+      let res = await authFetch('/api/errors/circuit-breaker/status');
+      if (res.status === 401) {
+        res = await authFetch('/api/errors/circuit-breaker/status', {}, true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (!res.ok) { setError(true); return; }
       setData(await res.json());
     } catch { setError(true); }
     finally { setLoading(false); }
-  }, []);
+  }, [router]);
 
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
   const handleReset = async (networkId: Network) => {
     setResetting(networkId);
     setResetMessages(prev => ({ ...prev, [networkId]: '' }));
+    const resetInit = { method: 'POST', body: JSON.stringify({ networkId }) };
     try {
-      const res = await authFetch('/api/errors/circuit-breaker/reset', {
-        method: 'POST',
-        body: JSON.stringify({ networkId }),
-      });
+      let res = await authFetch('/api/errors/circuit-breaker/reset', resetInit);
+      if (res.status === 401) {
+        res = await authFetch('/api/errors/circuit-breaker/reset', resetInit, true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (res.status === 429) {
         setResetMessages(prev => ({ ...prev, [networkId]: 'Too many resets — try again later.' }));
         return;

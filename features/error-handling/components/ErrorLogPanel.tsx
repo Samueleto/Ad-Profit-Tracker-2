@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
 import { AlertCircle, Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 const NETWORKS = ['exoclick', 'rollerads', 'zeydoo', 'propush'];
 
@@ -16,15 +18,16 @@ interface ErrorLog {
   backoffDelay: number;
 }
 
-async function authFetch(path: string): Promise<Response> {
+async function authFetch(path: string, refresh = false): Promise<Response> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
+  const token = await auth.currentUser?.getIdToken(refresh);
   return fetch(path, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
 }
 
 export default function ErrorLogPanel({ initialNetwork = '' }: { initialNetwork?: string }) {
+  const router = useRouter();
   const [network, setNetwork] = useState(initialNetwork);
   const [errorCode, setErrorCode] = useState('');
   const [startDate, setStartDate] = useState('');
@@ -50,7 +53,15 @@ export default function ErrorLogPanel({ initialNetwork = '' }: { initialNetwork?
     setLoading(true);
     setError(false);
     try {
-      const res = await authFetch(`/api/errors/log?${buildQuery()}`);
+      let res = await authFetch(`/api/errors/log?${buildQuery()}`);
+      if (res.status === 401) {
+        res = await authFetch(`/api/errors/log?${buildQuery()}`, true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (!res.ok) { setError(true); return; }
       const data = await res.json();
       setLogs(data.logs ?? []);
@@ -59,7 +70,7 @@ export default function ErrorLogPanel({ initialNetwork = '' }: { initialNetwork?
     } catch { setError(true); }
     finally { setLoading(false); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [network, errorCode, startDate, endDate]);
+  }, [network, errorCode, startDate, endDate, router]);
 
   useEffect(() => { fetchLogs(); }, [fetchLogs]);
 
@@ -67,7 +78,15 @@ export default function ErrorLogPanel({ initialNetwork = '' }: { initialNetwork?
     if (!cursor) return;
     setLoadingMore(true);
     try {
-      const res = await authFetch(`/api/errors/log?${buildQuery(cursor)}`);
+      let res = await authFetch(`/api/errors/log?${buildQuery(cursor)}`);
+      if (res.status === 401) {
+        res = await authFetch(`/api/errors/log?${buildQuery(cursor)}`, true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (!res.ok) return;
       const data = await res.json();
       setLogs(prev => [...prev, ...(data.logs ?? [])]);
