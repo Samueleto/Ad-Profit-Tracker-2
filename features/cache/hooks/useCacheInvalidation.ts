@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import { mutate } from 'swr';
+import { toast } from 'sonner';
 import { cacheApi, CacheApiError, type CacheInvalidateOptions } from '@/lib/cache/cacheApi';
 
 const CACHE_STATUS_KEY = '/api/cache/status';
@@ -31,7 +32,8 @@ export function useCacheInvalidation(): UseCacheInvalidationResult {
       if (err instanceof CacheApiError) {
         if (err.status === 401) {
           // Session expired — redirect to re-authenticate
-          window.location.href = '/';
+          toast.error('Session expired. Please sign in again.');
+          window.location.replace('/');
           return;
         }
         if (err.status === 400) {
