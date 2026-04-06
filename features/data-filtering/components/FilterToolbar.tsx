@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
 import { Filter, X, Loader2, AlertTriangle, ChevronDown, Search, Bookmark, Trash2, Plus } from 'lucide-react';
+import { toast } from 'sonner';
 import { useDashboardStore, type MetricFocus, type DataQuality } from '@/store/dashboardStore';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -29,9 +31,9 @@ const QUALITY_OPTIONS: { id: DataQuality; label: string }[] = [
 
 // ─── Auth fetch ───────────────────────────────────────────────────────────────
 
-async function authFetch(path: string): Promise<Response> {
+async function authFetch(path: string, refresh = false): Promise<Response> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
+  const token = await auth.currentUser?.getIdToken(refresh);
   return fetch(path, {
     headers: {
       'Content-Type': 'application/json',
@@ -55,6 +57,7 @@ function CountryCombobox({
   dateFrom: string;
   dateTo: string;
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [countries, setCountries] = useState<Country[]>([]);
@@ -63,8 +66,17 @@ function CountryCombobox({
 
   const loadCountries = useCallback(async () => {
     setStatus('loading');
+    const url = `/api/filters/options?type=country&dateFrom=${dateFrom}&dateTo=${dateTo}`;
     try {
-      const res = await authFetch(`/api/filters/options?type=country&dateFrom=${dateFrom}&dateTo=${dateTo}`);
+      let res = await authFetch(url);
+      if (res.status === 401) {
+        res = await authFetch(url, true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (!res.ok) { setStatus('error'); return; }
       const data = await res.json();
       const list: Country[] = data?.countries ?? data ?? [];
@@ -73,7 +85,7 @@ function CountryCombobox({
     } catch {
       setStatus('error');
     }
-  }, [dateFrom, dateTo]);
+  }, [dateFrom, dateTo, router]);
 
   // Invalidate cached country list when date range changes
   useEffect(() => {
@@ -181,6 +193,7 @@ function SavedFiltersDropdown({
   currentFilters: { selectedNetworks: string[]; selectedCountries: string[]; selectedMetric: MetricFocus; dataQuality: DataQuality };
   onApply: (f: SavedFilter['filters']) => void;
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [presets, setPresets] = useState<SavedFilter[]>([]);
   const [loading, setLoading] = useState(false);
@@ -218,18 +231,26 @@ function SavedFiltersDropdown({
   async function handleSave() {
     if (!newName.trim()) return;
     setSaving(true);
-    try {
-      const auth = getAuth();
-      const token = await auth.currentUser?.getIdToken();
-      const saveRes = await fetch('/api/filters/saved', {
+    const saveBody = JSON.stringify({ name: newName.trim(), filters: currentFilters });
+    const doSave = async (refresh: boolean) => {
+      const token = await getAuth().currentUser?.getIdToken(refresh);
+      return fetch('/api/filters/saved', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ name: newName.trim(), filters: currentFilters }),
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: saveBody,
       });
-      if (saveRes.ok) {
+    };
+    try {
+      let res = await doSave(false);
+      if (res.status === 401) {
+        res = await doSave(true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
+      if (res.ok) {
         setNewName('');
         setSaveMode(false);
         await loadPresets();
@@ -240,14 +261,24 @@ function SavedFiltersDropdown({
   }
 
   async function handleDelete(id: string) {
-    const auth = getAuth();
-    const token = await auth.currentUser?.getIdToken();
-    try {
-      await fetch(`/api/filters/saved/${id}`, {
+    const doDelete = async (refresh: boolean) => {
+      const token = await getAuth().currentUser?.getIdToken(refresh);
+      return fetch(`/api/filters/saved/${id}`, {
         method: 'DELETE',
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       });
-      setPresets(prev => prev.filter(p => p.id !== id));
+    };
+    try {
+      let res = await doDelete(false);
+      if (res.status === 401) {
+        res = await doDelete(true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
+      if (res.ok) setPresets(prev => prev.filter(p => p.id !== id));
     } catch { /* ignore */ }
   }
 
