@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { getAuth } from 'firebase/auth';
+import { toast } from 'sonner';
 import type {
   WorkspaceRole,
   PermissionKey,
@@ -11,14 +12,31 @@ import type {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function getFreshToken(): Promise<string | undefined> {
-  return getAuth().currentUser?.getIdToken();
+async function getFreshToken(forceRefresh = false): Promise<string | undefined> {
+  return getAuth().currentUser?.getIdToken(forceRefresh);
 }
 
 function buildHeaders(token?: string): Record<string, string> {
   const h: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) h.Authorization = `Bearer ${token}`;
   return h;
+}
+
+async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const doRequest = async (forceRefresh: boolean) => {
+    const token = await getFreshToken(forceRefresh);
+    return fetch(path, { ...init, headers: { ...buildHeaders(token), ...(init.headers as Record<string, string> ?? {}) } });
+  };
+  let res = await doRequest(false);
+  if (res.status === 401) {
+    res = await doRequest(true);
+    if (res.status === 401) {
+      toast.error('Session expired. Please sign in again.');
+      window.location.replace('/');
+      throw new Error('Session expired.');
+    }
+  }
+  return res;
 }
 
 // ─── checkPermission utility ──────────────────────────────────────────────────
@@ -56,8 +74,7 @@ export function useRolePermissions(): UseRolePermissionsResult {
 
     (async () => {
       try {
-        const token = await getFreshToken();
-        const res = await fetch('/api/rbac/permissions', { headers: buildHeaders(token) });
+        const res = await authFetch('/api/rbac/permissions');
         if (!res.ok) throw new Error(`Request failed: ${res.status}`);
         const data = await res.json();
         if (fetchId !== fetchIdRef.current) return;
@@ -96,8 +113,7 @@ export function useMyPermissions(): UseMyPermissionsResult {
   useEffect(() => {
     (async () => {
       try {
-        const token = await getFreshToken();
-        const res = await fetch('/api/rbac/my-permissions', { headers: buildHeaders(token) });
+        const res = await authFetch('/api/rbac/my-permissions');
         if (!res.ok) throw new Error(`Request failed: ${res.status}`);
         const data = await res.json();
         setPermissions(data.permissions ?? null);
