@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
 import { ChevronDown } from 'lucide-react';
 import NotificationToggleRow, { type NotificationTypeConfig } from './NotificationToggleRow';
@@ -72,9 +73,9 @@ type SaveStates = Record<AlertType, 'idle' | 'saving' | 'saved' | 'error'>;
 
 // ─── Auth fetch ───────────────────────────────────────────────────────────────
 
-async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
+async function authFetch(path: string, init: RequestInit = {}, refresh = false): Promise<Response> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
+  const token = await auth.currentUser?.getIdToken(refresh);
   return fetch(path, {
     ...init,
     headers: {
@@ -88,6 +89,7 @@ async function authFetch(path: string, init: RequestInit = {}): Promise<Response
 // ─── Main section ─────────────────────────────────────────────────────────────
 
 export default function EmailAlertPreferencesSection() {
+  const router = useRouter();
   const auth = getAuth();
   const userEmail = auth.currentUser?.email ?? '';
 
@@ -122,9 +124,18 @@ export default function EmailAlertPreferencesSection() {
 
   // Load preferences on mount
   useEffect(() => {
-    authFetch('/api/notifications/preferences')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
+    (async () => {
+      try {
+        let res = await authFetch('/api/notifications/preferences');
+        if (res.status === 401) {
+          res = await authFetch('/api/notifications/preferences', {}, true);
+          if (res.status === 401) {
+            toast.error('Session expired. Please sign in again.');
+            router.replace('/');
+            return;
+          }
+        }
+        const data = res.ok ? await res.json() : null;
         if (data) {
           const next = {} as ToggleStates;
           ALL_ALERTS.forEach(a => {
@@ -140,23 +151,30 @@ export default function EmailAlertPreferencesSection() {
           setAlertEmail(userEmail);
           setInitialEmail(userEmail);
         }
-      })
-      .catch(() => {
+      } catch {
         setAlertEmail(userEmail);
         setInitialEmail(userEmail);
-      })
-      .finally(() => setLoading(false));
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Toggle one alert type
   async function handleToggle(type: AlertType, enabled: boolean) {
     setToggleStates(prev => ({ ...prev, [type]: enabled }));
     setSaveStates(prev => ({ ...prev, [type]: 'saving' }));
+    const toggleInit = { method: 'PATCH', body: JSON.stringify({ emailAlerts: { [type]: { emailEnabled: enabled } } }) };
     try {
-      const res = await authFetch('/api/notifications/preferences', {
-        method: 'PATCH',
-        body: JSON.stringify({ emailAlerts: { [type]: { emailEnabled: enabled } } }),
-      });
+      let res = await authFetch('/api/notifications/preferences', toggleInit);
+      if (res.status === 401) {
+        res = await authFetch('/api/notifications/preferences', toggleInit, true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       setSaveStates(prev => ({ ...prev, [type]: res.ok ? 'saved' : 'error' }));
       setTimeout(() => setSaveStates(prev => ({ ...prev, [type]: 'idle' })), 2000);
     } catch {
@@ -186,11 +204,17 @@ export default function EmailAlertPreferencesSection() {
   // Save email
   async function handleSaveEmail() {
     setEmailSaveState('saving');
+    const saveInit = { method: 'PATCH', body: JSON.stringify({ alertDeliveryEmail: alertEmail }) };
     try {
-      const res = await authFetch('/api/notifications/preferences', {
-        method: 'PATCH',
-        body: JSON.stringify({ alertDeliveryEmail: alertEmail }),
-      });
+      let res = await authFetch('/api/notifications/preferences', saveInit);
+      if (res.status === 401) {
+        res = await authFetch('/api/notifications/preferences', saveInit, true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (res.ok) {
         setEmailSaveState('saved');
         setInitialEmail(alertEmail);

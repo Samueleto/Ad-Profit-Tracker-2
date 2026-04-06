@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
+import { toast } from 'sonner';
 import type { NotificationType } from '@/features/notifications/types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -39,8 +41,8 @@ export interface UseEmailAlertPreferencesResult {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function getFreshToken(): Promise<string | undefined> {
-  return getAuth().currentUser?.getIdToken();
+async function getFreshToken(refresh = false): Promise<string | undefined> {
+  return getAuth().currentUser?.getIdToken(refresh);
 }
 
 function buildHeaders(token?: string): Record<string, string> {
@@ -54,6 +56,7 @@ const SAVED_FLASH_MS = 1500;
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useEmailAlertPreferences(): UseEmailAlertPreferencesResult {
+  const router = useRouter();
   const [preferences, setPreferences] = useState<EmailPreferenceRow[]>([]);
   const [alertDeliveryEmail, setAlertDeliveryEmail] = useState('');
   const [lastTestEmailSentAt, setLastTestEmailSentAt] = useState<string | null>(null);
@@ -72,8 +75,17 @@ export function useEmailAlertPreferences(): UseEmailAlertPreferencesResult {
       setLoading(true);
       setFetchError(null);
       try {
-        const token = await getFreshToken();
-        const res = await fetch('/api/notifications/preferences', { headers: buildHeaders(token) });
+        let token = await getFreshToken();
+        let res = await fetch('/api/notifications/preferences', { headers: buildHeaders(token) });
+        if (res.status === 401) {
+          token = await getFreshToken(true);
+          res = await fetch('/api/notifications/preferences', { headers: buildHeaders(token) });
+          if (res.status === 401) {
+            toast.error('Session expired. Please sign in again.');
+            router.replace('/');
+            return;
+          }
+        }
         if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
         const data = await res.json();
         setPreferences(data.preferences ?? []);
@@ -85,7 +97,7 @@ export function useEmailAlertPreferences(): UseEmailAlertPreferencesResult {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [router]);
 
   // ─── Derived master toggle ─────────────────────────────────────────────────
 
@@ -110,14 +122,19 @@ export function useEmailAlertPreferences(): UseEmailAlertPreferencesResult {
       prev.map((p) => (p.type === type ? { ...p, emailEnabled: newValue } : p))
     );
     setRowStatus(type, 'saving');
-
+    const body = JSON.stringify({ [type]: { emailEnabled: newValue } });
     try {
-      const token = await getFreshToken();
-      const res = await fetch('/api/notifications/preferences', {
-        method: 'PATCH',
-        headers: buildHeaders(token),
-        body: JSON.stringify({ [type]: { emailEnabled: newValue } }),
-      });
+      let token = await getFreshToken();
+      let res = await fetch('/api/notifications/preferences', { method: 'PATCH', headers: buildHeaders(token), body });
+      if (res.status === 401) {
+        token = await getFreshToken(true);
+        res = await fetch('/api/notifications/preferences', { method: 'PATCH', headers: buildHeaders(token), body });
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (!res.ok) throw new Error(`Save failed: ${res.status}`);
       setRowStatus(type, 'saved');
       setTimeout(() => setRowStatus(type, 'idle'), SAVED_FLASH_MS);
@@ -128,7 +145,7 @@ export function useEmailAlertPreferences(): UseEmailAlertPreferencesResult {
       );
       setRowStatus(type, 'error');
     }
-  }, [setRowStatus]);
+  }, [setRowStatus, router]);
 
   // ─── Master toggle ─────────────────────────────────────────────────────────
 
@@ -180,20 +197,26 @@ export function useEmailAlertPreferences(): UseEmailAlertPreferencesResult {
 
   const saveDeliveryEmail = useCallback(async () => {
     setEmailSaveStatus('saving');
+    const body = JSON.stringify({ alertDeliveryEmail });
     try {
-      const token = await getFreshToken();
-      const res = await fetch('/api/notifications/preferences', {
-        method: 'PATCH',
-        headers: buildHeaders(token),
-        body: JSON.stringify({ alertDeliveryEmail }),
-      });
+      let token = await getFreshToken();
+      let res = await fetch('/api/notifications/preferences', { method: 'PATCH', headers: buildHeaders(token), body });
+      if (res.status === 401) {
+        token = await getFreshToken(true);
+        res = await fetch('/api/notifications/preferences', { method: 'PATCH', headers: buildHeaders(token), body });
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (!res.ok) throw new Error(`Save failed: ${res.status}`);
       setEmailSaveStatus('saved');
       setTimeout(() => setEmailSaveStatus('idle'), SAVED_FLASH_MS);
     } catch {
       setEmailSaveStatus('error');
     }
-  }, [alertDeliveryEmail]);
+  }, [alertDeliveryEmail, router]);
 
   // ─── Send test alert ───────────────────────────────────────────────────────
 

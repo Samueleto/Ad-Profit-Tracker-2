@@ -1,9 +1,11 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { formatDistanceToNow, parseISO } from 'date-fns';
 import { getAuth } from 'firebase/auth';
 import { Loader2 } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface EmailLogEntry {
   id: string;
@@ -19,6 +21,7 @@ interface EmailLogTableProps {
 }
 
 export default function EmailLogTable(_props: EmailLogTableProps) {
+  const router = useRouter();
   const [rows, setRows] = useState<EmailLogEntry[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -28,11 +31,22 @@ export default function EmailLogTable(_props: EmailLogTableProps) {
   const fetchLog = useCallback(async (nextCursor?: string) => {
     const isMore = !!nextCursor;
     isMore ? setLoadingMore(true) : setLoading(true);
-    try {
+    const url = `/api/emails/send?limit=20${nextCursor ? `&cursor=${nextCursor}` : ''}`;
+    const doFetch = async (refresh: boolean) => {
       const auth = getAuth();
-      const token = await auth.currentUser?.getIdToken();
-      const url = `/api/emails/send?limit=20${nextCursor ? `&cursor=${nextCursor}` : ''}`;
-      const res = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      const token = await auth.currentUser?.getIdToken(refresh);
+      return fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+    };
+    try {
+      let res = await doFetch(false);
+      if (res.status === 401) {
+        res = await doFetch(true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (!res.ok) return;
       const data = await res.json();
       setRows(prev => isMore ? [...prev, ...(data.logs ?? [])] : (data.logs ?? []));
@@ -41,7 +55,7 @@ export default function EmailLogTable(_props: EmailLogTableProps) {
     } finally {
       isMore ? setLoadingMore(false) : setLoading(false);
     }
-  }, []);
+  }, [router]);
 
   useEffect(() => { fetchLog(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
