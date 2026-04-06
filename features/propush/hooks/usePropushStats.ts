@@ -1,21 +1,32 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import { getAuth } from 'firebase/auth';
+import { toast } from 'sonner';
 import { useCachedNetworkData } from '@/features/caching/hooks/useNetworkCacheConfig';
 
 // ─── Shared fetcher ───────────────────────────────────────────────────────────
 
 async function fetchWithToken(url: string) {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
-  const res = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
+  const doFetch = async (refresh: boolean) => {
+    const token = await auth.currentUser?.getIdToken(refresh);
+    return fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  };
+  let res = await doFetch(false);
+  if (res.status === 401) {
+    res = await doFetch(true);
+    if (res.status === 401) {
+      const err = new Error('Session expired') as Error & { status: number };
+      err.status = 401;
+      throw err;
+    }
+  }
   if (!res.ok) {
-    const err = new Error(`Request failed: ${res.status}`);
-    (err as Error & { status: number }).status = res.status;
+    const err = new Error(`Request failed: ${res.status}`) as Error & { status: number };
+    err.status = res.status;
     throw err;
   }
   return res.json();
@@ -53,6 +64,7 @@ export function usePropushStats(dateFrom: string, dateTo: string, groupBy: 'day'
 // ─── usePropushRawResponse (lazy — does not fetch on mount) ───────────────────
 
 export function usePropushRawResponse() {
+  const router = useRouter();
   const [data, setData] = useState<unknown>(null);
   const [schema, setSchema] = useState<unknown>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -66,14 +78,23 @@ export function usePropushRawResponse() {
     setIsLoading(true);
     setError(null);
     setData(null);
-    try {
-      const token = await getAuth().currentUser?.getIdToken();
+    const url = `/api/networks/propush/raw-response?date=${date}`;
+    const doFetch = async (refresh: boolean) => {
+      const token = await getAuth().currentUser?.getIdToken(refresh);
       const headers: Record<string, string> = {};
       if (token) headers.Authorization = `Bearer ${token}`;
-      const res = await fetch(`/api/networks/propush/raw-response?date=${date}`, {
-        headers,
-        signal: abortRef.current.signal,
-      });
+      return fetch(url, { headers, signal: abortRef.current!.signal });
+    };
+    try {
+      let res = await doFetch(false);
+      if (res.status === 401) {
+        res = await doFetch(true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (!res.ok) {
         const err = new Error(`Request failed: ${res.status}`) as Error & { status?: number };
         err.status = res.status;
@@ -88,7 +109,7 @@ export function usePropushRawResponse() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [router]);
 
   return { fetch: fetchData, data, schema, isLoading, error };
 }
