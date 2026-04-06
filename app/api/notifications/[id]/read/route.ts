@@ -20,7 +20,7 @@ export async function PATCH(
     }
 
     await doc.ref.update({
-      read: true,
+      isRead: true,
       readAt: FieldValue.serverTimestamp(),
     });
 
