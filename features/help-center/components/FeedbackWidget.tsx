@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { ThumbsUp, ThumbsDown, Loader2 } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
 import { toast } from 'sonner';
@@ -12,21 +13,31 @@ interface FeedbackWidgetProps {
 type FeedbackState = 'idle' | 'submitting' | 'submitted' | 'already_rated' | 'error';
 
 export default function FeedbackWidget({ articleId }: FeedbackWidgetProps) {
+  const router = useRouter();
   const [state, setState] = useState<FeedbackState>('idle');
 
   const submit = async (rating: 'helpful' | 'not_helpful') => {
     setState('submitting');
-    try {
-      const auth = getAuth();
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch('/api/help/articles', {
+    const auth = getAuth();
+    const body = JSON.stringify({ articleId, rating });
+    const doFetch = async (refresh: boolean) => {
+      const token = await auth.currentUser?.getIdToken(refresh);
+      return fetch('/api/help/articles', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ articleId, rating }),
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body,
       });
+    };
+    try {
+      let res = await doFetch(false);
+      if (res.status === 401) {
+        res = await doFetch(true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (res.status === 429) { setState('already_rated'); return; }
       if (!res.ok) { setState('error'); return; }
       setState('submitted');

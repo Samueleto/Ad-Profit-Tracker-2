@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
 import { X, Loader2, RotateCcw } from 'lucide-react';
 import { toast } from 'sonner';
@@ -35,9 +36,9 @@ interface SettingsState {
   [key: string]: MetricSetting;
 }
 
-async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
+async function authFetch(path: string, init: RequestInit = {}, refresh = false): Promise<Response> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
+  const token = await auth.currentUser?.getIdToken(refresh);
   return fetch(path, {
     ...init,
     headers: {
@@ -54,6 +55,7 @@ interface BenchmarkSettingsModalProps {
 }
 
 export default function BenchmarkSettingsModal({ onClose, onSaved }: BenchmarkSettingsModalProps) {
+  const router = useRouter();
   const [settings, setSettings] = useState<SettingsState>(() => {
     const init: SettingsState = {};
     METRIC_CONFIGS.forEach(c => {
@@ -68,9 +70,18 @@ export default function BenchmarkSettingsModal({ onClose, onSaved }: BenchmarkSe
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
   useEffect(() => {
-    authFetch('/api/benchmarks/settings')
-      .then(r => r.ok ? r.json() : null)
-      .then(data => {
+    (async () => {
+      try {
+        let res = await authFetch('/api/benchmarks/settings');
+        if (res.status === 401) {
+          res = await authFetch('/api/benchmarks/settings', {}, true);
+          if (res.status === 401) {
+            toast.error('Session expired. Please sign in again.');
+            router.replace('/');
+            return;
+          }
+        }
+        const data = res.ok ? await res.json() : null;
         if (data) {
           const next: SettingsState = {};
           const nextInputs: Record<string, string> = {};
@@ -85,9 +96,10 @@ export default function BenchmarkSettingsModal({ onClose, onSaved }: BenchmarkSe
           setInputValues(nextInputs);
           if (data.updatedAt) setLastUpdated(data.updatedAt);
         }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+      } catch { /* ignore load errors */ }
+      finally { setLoading(false); }
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function validate(metric: BenchMetric, value: string): string | null {
@@ -136,15 +148,19 @@ export default function BenchmarkSettingsModal({ onClose, onSaved }: BenchmarkSe
     const hasErrors = Object.values(validationErrors).some(e => e);
     if (hasErrors) return;
     setSaving(true);
+    const body: Record<string, unknown> = {};
+    METRIC_CONFIGS.forEach(c => { body[c.metric] = settings[c.metric]; });
+    const saveInit = { method: 'PATCH', body: JSON.stringify(body) };
     try {
-      const body: Record<string, unknown> = {};
-      METRIC_CONFIGS.forEach(c => {
-        body[c.metric] = settings[c.metric];
-      });
-      const res = await authFetch('/api/benchmarks/settings', {
-        method: 'PATCH',
-        body: JSON.stringify(body),
-      });
+      let res = await authFetch('/api/benchmarks/settings', saveInit);
+      if (res.status === 401) {
+        res = await authFetch('/api/benchmarks/settings', saveInit, true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (res.ok) {
         toast.success('Settings saved');
         setLastUpdated(new Date().toISOString());
