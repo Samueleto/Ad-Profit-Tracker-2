@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Loader2 } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
+import { toast } from 'sonner';
 import type { NetworkId } from '../types';
 
 interface FetchSampleButtonProps {
@@ -11,23 +13,32 @@ interface FetchSampleButtonProps {
 }
 
 export default function FetchSampleButton({ networkId, onSuccess }: FetchSampleButtonProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const fetchSample = async () => {
     setLoading(true);
     setError(null);
-    try {
-      const auth = getAuth();
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch('/api/networks/config/test-connection', {
+    const auth = getAuth();
+    const doFetch = async (refresh: boolean) => {
+      const token = await auth.currentUser?.getIdToken(refresh);
+      return fetch('/api/networks/config/test-connection', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
         body: JSON.stringify({ networkId }),
       });
+    };
+    try {
+      let res = await doFetch(false);
+      if (res.status === 401) {
+        res = await doFetch(true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (!res.ok) throw new Error(`Request failed: ${res.status}`);
       const data = await res.json();
       onSuccess(data);

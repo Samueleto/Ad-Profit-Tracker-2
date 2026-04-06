@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
+import { toast } from 'sonner';
 
 interface ExoClickSyncButtonProps {
   dateFrom: string;
@@ -11,29 +13,37 @@ interface ExoClickSyncButtonProps {
 }
 
 export default function ExoClickSyncButton({ dateFrom, dateTo, onSyncComplete }: ExoClickSyncButtonProps) {
+  const router = useRouter();
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [message, setMessage] = useState<string | null>(null);
 
   const handleSync = async () => {
     setStatus('loading');
     setMessage(null);
-    try {
-      const auth = getAuth();
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch('/api/networks/exoclick/sync', {
+    const auth = getAuth();
+    const syncBody = JSON.stringify({ dateFrom, dateTo });
+    const doFetch = async (refresh: boolean) => {
+      const token = await auth.currentUser?.getIdToken(refresh);
+      return fetch('/api/networks/exoclick/sync', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ dateFrom, dateTo }),
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: syncBody,
       });
-
+    };
+    try {
+      let res = await doFetch(false);
+      if (res.status === 401) {
+        res = await doFetch(true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error ?? `Sync failed: ${res.status}`);
       }
-
       const data = await res.json();
       setStatus('success');
       setMessage(`Sync complete — ${data.rowsFetched ?? 0} rows fetched`);

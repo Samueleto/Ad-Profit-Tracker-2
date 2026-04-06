@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { X, Pencil, Trash2, Check } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
+import { toast } from 'sonner';
 import type { SavedReport, ReportConfig } from '../types';
 
 interface SavedReportsPanelProps {
@@ -12,15 +14,21 @@ interface SavedReportsPanelProps {
 }
 
 export default function SavedReportsPanel({ isOpen, onClose, onLoad }: SavedReportsPanelProps) {
+  const router = useRouter();
   const [reports, setReports] = useState<SavedReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const getToken = async () => {
+  const getToken = async (refresh = false) => {
     const auth = getAuth();
-    return auth.currentUser?.getIdToken();
+    return auth.currentUser?.getIdToken(refresh);
+  };
+
+  const handle401 = () => {
+    toast.error('Session expired. Please sign in again.');
+    router.replace('/');
   };
 
   useEffect(() => {
@@ -28,10 +36,13 @@ export default function SavedReportsPanel({ isOpen, onClose, onLoad }: SavedRepo
     const fetchReports = async () => {
       setLoading(true);
       try {
-        const token = await getToken();
-        const res = await fetch('/api/reports', {
-          headers: token ? { Authorization: `Bearer ${token}` } : {},
-        });
+        let token = await getToken();
+        let res = await fetch('/api/reports', { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+        if (res.status === 401) {
+          token = await getToken(true);
+          res = await fetch('/api/reports', { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+          if (res.status === 401) { handle401(); return; }
+        }
         if (!res.ok) throw new Error();
         const data = await res.json();
         setReports(data.reports ?? []);
@@ -42,21 +53,25 @@ export default function SavedReportsPanel({ isOpen, onClose, onLoad }: SavedRepo
       }
     };
     fetchReports();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
   const handleRename = async (id: string) => {
     if (!editingName.trim()) { setEditingId(null); return; }
+    const renameInit = {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' } as Record<string, string>,
+      body: JSON.stringify({ name: editingName.trim() }),
+    };
     try {
-      const token = await getToken();
-      await fetch(`/api/reports/${id}`, {
-        method: 'PATCH',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ name: editingName.trim() }),
-      });
-      setReports(prev => prev.map(r => r.id === id ? { ...r, name: editingName.trim() } : r));
+      let token = await getToken();
+      let res = await fetch(`/api/reports/${id}`, { ...renameInit, headers: { ...renameInit.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+      if (res.status === 401) {
+        token = await getToken(true);
+        res = await fetch(`/api/reports/${id}`, { ...renameInit, headers: { ...renameInit.headers, ...(token ? { Authorization: `Bearer ${token}` } : {}) } });
+        if (res.status === 401) { handle401(); return; }
+      }
+      if (res.ok) setReports(prev => prev.map(r => r.id === id ? { ...r, name: editingName.trim() } : r));
     } finally {
       setEditingId(null);
     }
@@ -64,12 +79,14 @@ export default function SavedReportsPanel({ isOpen, onClose, onLoad }: SavedRepo
 
   const handleDelete = async (id: string) => {
     try {
-      const token = await getToken();
-      await fetch(`/api/reports/${id}`, {
-        method: 'DELETE',
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
-      });
-      setReports(prev => prev.filter(r => r.id !== id));
+      let token = await getToken();
+      let res = await fetch(`/api/reports/${id}`, { method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (res.status === 401) {
+        token = await getToken(true);
+        res = await fetch(`/api/reports/${id}`, { method: 'DELETE', headers: token ? { Authorization: `Bearer ${token}` } : {} });
+        if (res.status === 401) { handle401(); return; }
+      }
+      if (res.ok) setReports(prev => prev.filter(r => r.id !== id));
     } finally {
       setDeletingId(null);
     }
