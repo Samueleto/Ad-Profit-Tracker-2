@@ -22,7 +22,7 @@ export async function GET(request: Request) {
 
     let statsQuery = adminDb
       .collection('adStats')
-      .where('userId', '==', uid)
+      .where('uid', '==', uid)
       .where('networkId', '==', networkId) as FirebaseFirestore.Query;
 
     if (dateFrom) statsQuery = statsQuery.where('date', '>=', dateFrom);

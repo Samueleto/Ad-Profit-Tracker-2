@@ -46,10 +46,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    // userId filter always from verified token — never from query params
+    // uid filter always from verified token — never from query params
     const snapshot = await adminDb
       .collection("adStats")
-      .where("userId", "==", uid)
+      .where("uid", "==", uid)
       .where("date", ">=", dateFrom)
       .where("date", "<=", dateTo)
       .get();

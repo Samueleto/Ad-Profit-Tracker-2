@@ -122,7 +122,7 @@ export async function POST(request: Request) {
       const docId = `${uid}_${networkId}_${dateKey}`;
       const ref = adminDb.collection("adStats").doc(docId);
       batch.set(ref, {
-        userId: uid, networkId, date: dateKey,
+        uid, networkId, date: dateKey,
         impressions: Number(stat.impressions) || 0,
         clicks: Number(stat.clicks) || 0,
         ctr: Number(stat.ctr) || 0,

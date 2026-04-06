@@ -51,10 +51,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    // userId filter always comes from the verified token — never from params
+    // uid filter always comes from the verified token — never from params
     let statsQuery = adminDb
       .collection("adStats")
-      .where("userId", "==", uid)
+      .where("uid", "==", uid)
       .where("date", ">=", dateFrom)
       .where("date", "<=", dateTo) as FirebaseFirestore.Query;
 
