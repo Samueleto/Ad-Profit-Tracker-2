@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
+import { toast } from 'sonner';
 import type { PdfSection } from '../types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -59,6 +61,7 @@ export function usePdfExport(
   previewData: PreviewData | null,
   onClose?: () => void
 ): UsePdfExportResult {
+  const router = useRouter();
   const [selectedSections, setSelectedSections] = useState<PdfSection[]>(DEFAULT_SECTIONS);
   const [orientation, setOrientation] = useState<Orientation>('portrait');
   const [paperSize, setPaperSize] = useState<PaperSize>('a4');
@@ -86,10 +89,6 @@ export function usePdfExport(
     let url: string | null = null;
     try {
       const auth = getAuth();
-      const token = await auth.currentUser?.getIdToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers.Authorization = `Bearer ${token}`;
-
       const payload = {
         dateFrom,
         dateTo,
@@ -98,12 +97,19 @@ export function usePdfExport(
         paperSize,
         ...(filename.trim() ? { filename: filename.trim() } : {}),
       };
+      const body = JSON.stringify(payload);
+      const doFetch = async (refresh: boolean) => {
+        const token = await auth.currentUser?.getIdToken(refresh);
+        const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+        if (token) headers.Authorization = `Bearer ${token}`;
+        return fetch('/api/export/pdf', { method: 'POST', headers, body });
+      };
 
-      const res = await fetch('/api/export/pdf', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(payload),
-      });
+      let res = await doFetch(false);
+      if (res.status === 401) {
+        res = await doFetch(true);
+        if (res.status === 401) { toast.error('Session expired. Please sign in again.'); router.replace('/'); return; }
+      }
 
       if (!res.ok) {
         const msg = ERROR_MESSAGES[res.status] ?? `Export failed (${res.status}).`;
@@ -129,7 +135,7 @@ export function usePdfExport(
     } finally {
       if (url) URL.revokeObjectURL(url);
     }
-  }, [canExport, dateFrom, dateTo, selectedSections, orientation, paperSize, filename, onClose]);
+  }, [canExport, dateFrom, dateTo, selectedSections, orientation, paperSize, filename, onClose, router]);
 
   return {
     selectedSections,
