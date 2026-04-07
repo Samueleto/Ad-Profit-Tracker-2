@@ -46,7 +46,7 @@ export async function GET(request: Request) {
         // Fetch the last sync log
         const logsSnap = await adminDb
           .collection("auditLogs")
-          .where("uid", "==", uid)
+          .where("userId", "==", uid)
           .where("networkId", "==", networkId)
           .where("action", "in", ["sync_completed", "sync_failed"])
           .orderBy("timestamp", "desc")
@@ -97,15 +97,15 @@ export async function GET(request: Request) {
           lastSyncStatus,
           lastSyncedAt,
           lastSyncError: lastLog
-            ? ((lastLog.metadata as Record<string, unknown>)?.error as string) ?? null
+            ? ((lastLog.details as Record<string, unknown>)?.error as string) ?? null
             : null,
           latestSyncedAt: lastSyncedAt,
           latestDataDate: lastLog
-            ? ((lastLog.metadata as Record<string, unknown>)?.dateTo as string) ?? null
+            ? ((lastLog.details as Record<string, unknown>)?.dateTo as string) ?? null
             : null,
           lastRowsFetched: lastLog
             ? Number(
-                (lastLog.metadata as Record<string, unknown>)?.recordsStored ?? 0
+                (lastLog.details as Record<string, unknown>)?.recordsStored ?? 0
               ) || null
             : null,
           lastLatencyMs: null,
