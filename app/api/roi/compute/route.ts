@@ -85,6 +85,19 @@ export async function GET(request: Request) {
     });
 
     const roi = computeRoi(totalRevenue, totalCost);
+    const breakdown = Object.entries(grouped).map(([key, val]) => {
+      const pointRoi = computeRoi(val.revenue, val.cost);
+      return {
+        group: key,
+        key,
+        date: key,
+        ...val,
+        netProfit: val.revenue - val.cost,
+        roi: pointRoi,
+        colorCode: getColorCode(pointRoi),
+        roiIndicator: getRoiIndicator(pointRoi),
+      };
+    });
     const result = {
       dateFrom,
       dateTo,
@@ -96,11 +109,8 @@ export async function GET(request: Request) {
       totalRevenue,
       totalCost,
       netProfit: totalRevenue - totalCost,
-      breakdown: Object.entries(grouped).map(([key, val]) => ({
-        group: key,
-        ...val,
-        roi: computeRoi(val.revenue, val.cost),
-      })),
+      breakdown,
+      series: breakdown,
       cachedAt: new Date().toISOString(),
     };
 

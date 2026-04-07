@@ -32,7 +32,13 @@ export async function GET(request: Request) {
       };
     });
 
-    return NextResponse.json({ statuses });
+    const summary = {
+      open: statuses.filter(s => s.circuitBreakerState === 'open').length,
+      halfOpen: statuses.filter(s => s.circuitBreakerState === 'half-open').length,
+      closed: statuses.filter(s => s.circuitBreakerState === 'closed').length,
+      total: statuses.length,
+    };
+    return NextResponse.json({ statuses, circuits: statuses, summary });
   } catch (error) {
     console.error("GET /api/errors/circuit-breaker/status error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

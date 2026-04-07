@@ -72,6 +72,7 @@ export async function GET(request: Request) {
 
     const byNetwork: Record<string, { revenue: number; cost: number; impressions: number; clicks: number }> = {};
     const byDate: Record<string, { revenue: number; cost: number }> = {};
+    const byCountry: Record<string, { revenue: number; cost: number }> = {};
 
     snapshot.forEach((doc) => {
       const data = doc.data();
@@ -102,6 +103,11 @@ export async function GET(request: Request) {
         byDate[data.date].revenue += revenue;
         byDate[data.date].cost += cost;
       }
+
+      const country = (data.country as string) || 'unknown';
+      if (!byCountry[country]) byCountry[country] = { revenue: 0, cost: 0 };
+      byCountry[country].revenue += revenue;
+      byCountry[country].cost += cost;
     });
 
     const totalProfit = totalRevenue - totalCost;
@@ -110,23 +116,35 @@ export async function GET(request: Request) {
 
     const dailySeries = Object.entries(byDate)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([date, { revenue, cost }]) => ({
-        date,
-        revenue,
-        cost,
-        profit: revenue - cost,
-      }));
+      .map(([date, { revenue, cost }]) => {
+        const netProfit = revenue - cost;
+        const dayRoi = cost > 0 ? ((revenue - cost) / cost) * 100 : 0;
+        return { date, revenue, cost, netProfit, roi: dayRoi };
+      });
 
     const perNetwork = Object.entries(byNetwork).map(
       ([networkId, { revenue, cost, impressions, clicks }]) => ({
         networkId,
         revenue,
         cost,
+        netProfit: revenue - cost,
         profit: revenue - cost,
         impressions,
         clicks,
+        primaryMetric: revenue,
       })
     );
+
+    const topCountries = Object.entries(byCountry)
+      .sort(([, a], [, b]) => b.revenue - a.revenue)
+      .slice(0, 10)
+      .map(([country, { revenue, cost }]) => ({
+        country,
+        revenue,
+        cost,
+        netProfit: revenue - cost,
+        metricShare: totalRevenue > 0 ? (revenue / totalRevenue) * 100 : 0,
+      }));
 
     const cachedAt = new Date().toISOString();
 
@@ -139,9 +157,14 @@ export async function GET(request: Request) {
         ctr,
         totalImpressions,
         totalClicks,
+        revenueChange: null,
+        costChange: null,
+        profitChange: null,
+        roiChange: null,
       },
       dailySeries,
       perNetwork,
+      topCountries,
       recordCount: snapshot.size,
       cachedAt,
     };

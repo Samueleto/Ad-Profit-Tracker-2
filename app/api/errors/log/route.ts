@@ -80,7 +80,7 @@ export async function GET(request: Request) {
       logs = logs.filter((log) => log.createdAt && log.createdAt <= endDate + "T23:59:59Z");
     }
 
-    return NextResponse.json({ logs, total: logs.length });
+    return NextResponse.json({ logs, errors: logs, total: logs.length, hasMore: false, nextCursor: null });
   } catch (error) {
     console.error("GET /api/errors/log error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

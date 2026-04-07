@@ -87,7 +87,9 @@ function buildQueryParams(filters: ActiveFilters, cursor?: string | null): strin
 function matchesSearch(log: AuditLog, searchText: string): boolean {
   if (!searchText.trim()) return true;
   const q = searchText.toLowerCase();
-  return JSON.stringify(log.metadata).toLowerCase().includes(q) ||
+  const anyLog = log as unknown as Record<string, unknown>;
+  const payload = anyLog.details ?? anyLog.metadata;
+  return JSON.stringify(payload ?? {}).toLowerCase().includes(q) ||
     log.action.toLowerCase().includes(q) ||
     log.resourceType?.toLowerCase().includes(q);
 }
