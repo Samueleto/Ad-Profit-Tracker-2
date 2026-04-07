@@ -11,6 +11,8 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const networkId = searchParams.get("networkId");
+    const dateFrom = searchParams.get("dateFrom");
+    const dateTo = searchParams.get("dateTo");
 
     if (networkId && !isValidNetworkId(networkId)) {
       return NextResponse.json({ error: "Invalid networkId" }, { status: 400 });
@@ -20,19 +22,20 @@ export async function GET(request: Request) {
     let query = adminDb
       .collection("auditLogs")
       .where("userId", "==", uid)
-      .where("action", "in", ["sync_completed", "sync_failed"])
-      .orderBy("createdAt", "desc")
-      .limit(200) as FirebaseFirestore.Query;
+      .where("action", "in", ["sync_completed", "sync_failed"]) as FirebaseFirestore.Query;
 
     if (networkId) {
-      query = adminDb
-        .collection("auditLogs")
-        .where("userId", "==", uid)
-        .where("networkId", "==", networkId)
-        .where("action", "in", ["sync_completed", "sync_failed"])
-        .orderBy("createdAt", "desc")
-        .limit(200);
+      query = query.where("networkId", "==", networkId);
     }
+    if (dateFrom) {
+      query = query.where("createdAt", ">=", new Date(dateFrom));
+    }
+    if (dateTo) {
+      const end = new Date(dateTo);
+      end.setHours(23, 59, 59, 999);
+      query = query.where("createdAt", "<=", end);
+    }
+    query = query.orderBy("createdAt", "desc").limit(500);
 
     const snapshot = await query.get();
 
