@@ -16,6 +16,8 @@ export async function GET(request: Request) {
     const networkId = searchParams.get("networkId");
     const dateFrom = searchParams.get("dateFrom");
     const dateTo = searchParams.get("dateTo");
+    const severity = searchParams.get("severity");
+    const anomalyType = searchParams.get("anomalyType");
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200);
 
     if (networkId && !isValidNetworkId(networkId)) {
@@ -53,9 +55,19 @@ export async function GET(request: Request) {
       });
     }
 
+    if (severity) {
+      anomalies = anomalies.filter((a) => (a as Record<string, unknown>)?.severity === severity);
+    }
+
+    if (anomalyType) {
+      anomalies = anomalies.filter((a) => (a as Record<string, unknown>)?.anomalyType === anomalyType);
+    }
+
     return NextResponse.json({
       anomalies,
       total: anomalies.length,
+      hasMore: false,
+      nextCursor: null,
       networkId: networkId || null,
     });
   } catch (error) {
