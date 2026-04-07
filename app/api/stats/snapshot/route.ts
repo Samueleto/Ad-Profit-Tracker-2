@@ -16,8 +16,72 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const date = searchParams.get("date");
+    const dateFrom = searchParams.get("dateFrom");
+    const dateTo = searchParams.get("dateTo");
+    const country = searchParams.get("country");
     const networkId = searchParams.get("networkId");
 
+    // Range mode: dateFrom + dateTo (used by GeoCountryDrilldownModal)
+    if (dateFrom || dateTo) {
+      if (!dateFrom || !DATE_RE.test(dateFrom) || !dateTo || !DATE_RE.test(dateTo)) {
+        return NextResponse.json({ error: "dateFrom and dateTo must be in YYYY-MM-DD format" }, { status: 400 });
+      }
+
+      let query = adminDb
+        .collection("adStats")
+        .where("uid", "==", uid)
+        .where("date", ">=", dateFrom)
+        .where("date", "<=", dateTo) as FirebaseFirestore.Query;
+
+      if (networkId && isValidNetworkId(networkId)) {
+        query = query.where("networkId", "==", networkId);
+      }
+
+      const snap = await query.get();
+
+      // Build daily aggregates (optionally filtered by country)
+      const byDate: Record<string, { revenue: number; cost: number }> = {};
+      const byNetwork: Record<string, { revenue: number; cost: number; hasCost: boolean; hasRevenue: boolean }> = {};
+
+      snap.forEach((doc) => {
+        const d = doc.data();
+        if (country && d.country && d.country !== country) return;
+        const day = String(d.date ?? "");
+        if (!byDate[day]) byDate[day] = { revenue: 0, cost: 0 };
+        byDate[day].revenue += Number(d.revenue) || 0;
+        byDate[day].cost += Number(d.cost) || 0;
+
+        const net = String(d.networkId ?? "unknown");
+        if (!byNetwork[net]) byNetwork[net] = { revenue: 0, cost: 0, hasCost: false, hasRevenue: false };
+        byNetwork[net].revenue += Number(d.revenue) || 0;
+        byNetwork[net].cost += Number(d.cost) || 0;
+        if (Number(d.revenue) > 0) byNetwork[net].hasRevenue = true;
+        if (Number(d.cost) > 0) byNetwork[net].hasCost = true;
+      });
+
+      const days = Object.entries(byDate)
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([d, { revenue, cost }]) => ({ date: d, netProfit: revenue - cost }));
+
+      const totalRevenue = days.reduce((s, d) => s + (d.netProfit > 0 ? d.netProfit : 0), 0);
+      const totalNetProfit = days.reduce((s, d) => s + d.netProfit, 0);
+
+      const networkBreakdown = Object.entries(byNetwork).map(([networkName, val]) => {
+        const dataRole: "Cost Only" | "Revenue Only" | "Both" =
+          val.hasRevenue && val.hasCost ? "Both" : val.hasRevenue ? "Revenue Only" : "Cost Only";
+        const primaryMetricValue = val.revenue > 0 ? val.revenue : val.cost > 0 ? val.cost : null;
+        const percentageOfTotal = totalRevenue > 0 ? (val.revenue / totalRevenue) * 100 : 0;
+        return { networkName, dataRole, primaryMetricValue, percentageOfTotal };
+      });
+
+      if (days.length === 0) {
+        return NextResponse.json({ error: "No data found for this range" }, { status: 404 });
+      }
+
+      return NextResponse.json({ dateFrom, dateTo, country: country ?? null, days, networkBreakdown, totalNetProfit });
+    }
+
+    // Single-date mode (legacy)
     if (!date || !DATE_RE.test(date)) {
       return NextResponse.json({ error: "date must be in YYYY-MM-DD format" }, { status: 400 });
     }
@@ -41,7 +105,6 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "No snapshot found for this date" }, { status: 404 });
     }
 
-    // Aggregate across all adStats docs for this date (may span multiple networks)
     let totalRevenue = 0;
     let totalCost = 0;
     let totalImpressions = 0;
@@ -57,8 +120,6 @@ export async function GET(request: Request) {
 
     const netProfit = totalRevenue - totalCost;
     const roi = computeRoi(totalRevenue, totalCost) ?? 0;
-
-    // Also include the per-network breakdown for callers that need it
     const stats = snapshot.docs.map(serializeDoc).filter(Boolean);
 
     return NextResponse.json({

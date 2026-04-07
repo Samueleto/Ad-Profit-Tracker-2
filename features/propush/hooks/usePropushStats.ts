@@ -55,7 +55,7 @@ export function usePropushLatest() {
 
 export function usePropushStats(dateFrom: string, dateTo: string, groupBy: 'day' | 'total' = 'day') {
   const key = dateFrom && dateTo
-    ? `/api/networks/propush/stats?from=${dateFrom}&to=${dateTo}&groupBy=${groupBy}`
+    ? `/api/networks/propush/stats?dateFrom=${dateFrom}&dateTo=${dateTo}&groupBy=${groupBy}`
     : null;
   const { data, error, isLoading, mutate } = useSWR(key, fetchWithToken, { keepPreviousData: true });
   return { data, isLoading, error, refetch: mutate };

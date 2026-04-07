@@ -33,7 +33,7 @@ export default function DataAvailabilityDot() {
           return;
         }
         const token = await user.getIdToken(retry);
-        const res = await fetch(`/api/stats/dates?from=${fromDate}&to=${toDate}`, {
+        const res = await fetch(`/api/stats/dates?dateFrom=${fromDate}&dateTo=${toDate}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
 

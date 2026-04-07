@@ -58,7 +58,7 @@ export function useExoClickStats(dateFrom: string, dateTo: string, groupBy: 'day
   const debouncedFrom = useDebouncedValue(dateFrom);
   const debouncedTo = useDebouncedValue(dateTo);
   const debouncedGroupBy = useDebouncedValue(groupBy);
-  const key = `/api/networks/exoclick/stats?from=${debouncedFrom}&to=${debouncedTo}&groupBy=${debouncedGroupBy}`;
+  const key = `/api/networks/exoclick/stats?dateFrom=${debouncedFrom}&dateTo=${debouncedTo}&groupBy=${debouncedGroupBy}`;
   const { data, error, isLoading, mutate } = useSWR(key, fetchWithToken, { keepPreviousData: true });
   return { data, isLoading, error, refetch: mutate };
 }
@@ -69,7 +69,7 @@ export function useExoClickCountries(dateFrom: string, dateTo: string, limit?: n
   const debouncedFrom = useDebouncedValue(dateFrom);
   const debouncedTo = useDebouncedValue(dateTo);
   const debouncedLimit = useDebouncedValue(limit);
-  const params = new URLSearchParams({ from: debouncedFrom, to: debouncedTo });
+  const params = new URLSearchParams({ dateFrom: debouncedFrom, dateTo: debouncedTo });
   if (debouncedLimit) params.set('limit', String(debouncedLimit));
   const key = `/api/networks/exoclick/stats/by-country?${params}`;
   const { data, error, isLoading, mutate } = useSWR(key, fetchWithToken, { keepPreviousData: true });

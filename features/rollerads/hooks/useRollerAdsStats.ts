@@ -57,7 +57,7 @@ export function useRollerAdsStats(dateFrom: string, dateTo: string, groupBy: 'da
   const debouncedFrom = useDebouncedValue(dateFrom);
   const debouncedTo = useDebouncedValue(dateTo);
   const debouncedGroupBy = useDebouncedValue(groupBy);
-  const key = `/api/networks/rollerads/stats?from=${debouncedFrom}&to=${debouncedTo}&groupBy=${debouncedGroupBy}`;
+  const key = `/api/networks/rollerads/stats?dateFrom=${debouncedFrom}&dateTo=${debouncedTo}&groupBy=${debouncedGroupBy}`;
   const { data, error, isLoading, mutate } = useSWR(key, fetchWithToken, { keepPreviousData: true });
   return { data, isLoading, error, refetch: mutate };
 }
@@ -68,7 +68,7 @@ export function useRollerAdsCountries(dateFrom: string, dateTo: string, limit?: 
   const debouncedFrom = useDebouncedValue(dateFrom);
   const debouncedTo = useDebouncedValue(dateTo);
   const debouncedLimit = useDebouncedValue(limit);
-  const params = new URLSearchParams({ from: debouncedFrom, to: debouncedTo });
+  const params = new URLSearchParams({ dateFrom: debouncedFrom, dateTo: debouncedTo });
   if (debouncedLimit) params.set('limit', String(debouncedLimit));
   const key = `/api/networks/rollerads/stats/by-country?${params}`;
   const { data, error, isLoading, mutate } = useSWR(key, fetchWithToken, { keepPreviousData: true });

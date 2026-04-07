@@ -65,7 +65,7 @@ export default function ExportModal({ onClose }: ExportModalProps) {
       setPreviewFailed(false);
       try {
         const token = await getToken();
-        const res = await fetch(`/api/export/preview?from=${fromDate}&to=${toDate}`, {
+        const res = await fetch(`/api/export/preview?dateFrom=${fromDate}&dateTo=${toDate}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
         });
         if (!res.ok) throw new Error(`${res.status}`);
