@@ -85,8 +85,8 @@ export function useGeoBreakdown(fromDate: string, toDate: string): UseGeoBreakdo
           return;
         }
         [geoRes, roiRes] = await Promise.all([
-          authFetch(`/api/stats/geo-breakdown?from=${from}&to=${to}`, token),
-          authFetch(`/api/roi/breakdown?dimension=country&from=${from}&to=${to}`, token).catch(() => null),
+          authFetch(`/api/stats/geo-breakdown?dateFrom=${from}&dateTo=${to}`, token),
+          authFetch(`/api/roi/breakdown?dimension=country&dateFrom=${from}&dateTo=${to}`, token).catch(() => null),
         ]);
         if (geoRes.status === 401) {
           setSessionExpired(true);
