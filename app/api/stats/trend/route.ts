@@ -73,7 +73,7 @@ export async function GET(request: Request) {
       });
     }
 
-    return NextResponse.json({ stats, total: stats.length, networkId: networkId || null });
+    return NextResponse.json({ rows: stats, stats, total: stats.length, networkId: networkId || null });
   } catch (error) {
     console.error("GET /api/stats/trend error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
