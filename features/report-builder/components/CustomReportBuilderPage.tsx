@@ -322,7 +322,7 @@ export default function CustomReportBuilderPage() {
   }, []);
 
   const fetchSectionCounts = useCallback(async (cfg: ReportConfig) => {
-    const res = await authFetch(`/api/export/preview?from=${cfg.dateFrom}&to=${cfg.dateTo}`).catch(() => null);
+    const res = await authFetch(`/api/export/preview?dateFrom=${cfg.dateFrom}&dateTo=${cfg.dateTo}`).catch(() => null);
     if (res?.ok) {
       const data = await res.json();
       setSectionCounts(data?.sheets ?? {});
