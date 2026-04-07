@@ -15,10 +15,10 @@ export async function GET(request: Request) {
     for (const networkId of SUPPORTED_NETWORKS) {
       const logsSnapshot = await adminDb
         .collection("auditLogs")
-        .where("uid", "==", uid)
+        .where("userId", "==", uid)
         .where("networkId", "==", networkId)
         .where("action", "in", ["sync_completed", "sync_failed"])
-        .orderBy("timestamp", "desc")
+        .orderBy("createdAt", "desc")
         .limit(1)
         .get();
 

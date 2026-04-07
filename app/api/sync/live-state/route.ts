@@ -49,7 +49,7 @@ export async function GET(request: Request) {
           .where("userId", "==", uid)
           .where("networkId", "==", networkId)
           .where("action", "in", ["sync_completed", "sync_failed"])
-          .orderBy("timestamp", "desc")
+          .orderBy("createdAt", "desc")
           .limit(1)
           .get();
 

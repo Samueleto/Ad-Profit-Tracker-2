@@ -39,7 +39,7 @@ export async function GET(request: Request) {
         "backfill_triggered",
         "retry_triggered",
       ])
-      .orderBy("timestamp", "desc")
+      .orderBy("createdAt", "desc")
       .limit(limit + 1); // fetch one extra to determine hasMore
 
     if (networkId && isValidNetworkId(networkId)) {
@@ -54,7 +54,7 @@ export async function GET(request: Request) {
           "backfill_triggered",
           "retry_triggered",
         ])
-        .orderBy("timestamp", "desc")
+        .orderBy("createdAt", "desc")
         .limit(limit + 1);
     }
 
