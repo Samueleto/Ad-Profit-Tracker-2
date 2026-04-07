@@ -31,7 +31,7 @@ export default function EmailLogTable(_props: EmailLogTableProps) {
   const fetchLog = useCallback(async (nextCursor?: string) => {
     const isMore = !!nextCursor;
     isMore ? setLoadingMore(true) : setLoading(true);
-    const url = `/api/emails/send?limit=20${nextCursor ? `&cursor=${nextCursor}` : ''}`;
+    const url = `/api/email/log?limit=20${nextCursor ? `&cursor=${nextCursor}` : ''}`;
     const doFetch = async (refresh: boolean) => {
       const auth = getAuth();
       const token = await auth.currentUser?.getIdToken(refresh);
