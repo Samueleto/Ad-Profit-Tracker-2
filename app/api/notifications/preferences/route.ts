@@ -22,7 +22,13 @@ function checkPreferencesRateLimit(uid: string): { allowed: boolean; retryAfter?
   return { allowed: true };
 }
 
+// Accept both snake_case (hook sends) and camelCase (legacy) preference keys
 const VALID_PREFERENCE_KEYS = new Set([
+  // snake_case (NOTIFICATION_TYPES — what hooks use)
+  'sync_success', 'sync_failure', 'export_complete', 'export_failure',
+  'schedule_delivered', 'schedule_failed', 'reconciliation_anomaly',
+  'circuit_breaker_opened', 'rate_limit_exceeded',
+  // camelCase (legacy stored format)
   'syncSuccess', 'syncFailure', 'reconciliationAlert', 'anomalyDetected',
   'lowBalance', 'weeklyDigest', 'monthlyReport', 'systemMaintenance',
 ]);
@@ -39,22 +45,32 @@ export async function GET(request: Request) {
   try {
     const userDoc = await adminDb.collection('users').doc(uid).get();
     const userData = userDoc.data() ?? {};
-    const preferences = userData.notificationPreferences ?? {};
+    const storedPrefs = userData.notificationPreferences ?? {};
+
+    // NOTIFICATION_TYPES used by the hook (snake_case)
+    const NOTIFICATION_TYPES = [
+      'sync_success', 'sync_failure', 'export_complete', 'export_failure',
+      'schedule_delivered', 'schedule_failed', 'reconciliation_anomaly',
+      'circuit_breaker_opened', 'rate_limit_exceeded',
+    ];
+
+    // Build EmailPreferenceRow[] expected by useEmailAlertPreferences hook
+    const preferences = NOTIFICATION_TYPES.map(type => {
+      const storedValue = storedPrefs[type];
+      const emailEnabled = typeof storedValue === 'boolean' ? storedValue : true;
+      return { type, enabled: emailEnabled, emailEnabled, isDefault: storedValue === undefined };
+    });
 
     // Build emailAlerts map expected by EmailAlertPreferencesSection
-    // Each preference key maps to { emailEnabled: boolean }
     const emailAlerts: Record<string, { emailEnabled: boolean }> = {};
-    for (const [key, value] of Object.entries(preferences)) {
-      if (typeof value === 'boolean') {
-        emailAlerts[key] = { emailEnabled: value };
-      }
+    for (const row of preferences) {
+      emailAlerts[row.type] = { emailEnabled: row.emailEnabled };
     }
 
     return NextResponse.json({
       preferences,
       emailAlerts,
-      // Flatten convenience fields for the email alerts section
-      alertDeliveryEmail: preferences.alertDeliveryEmail ?? null,
+      alertDeliveryEmail: storedPrefs.alertDeliveryEmail ?? null,
       lastTestEmailSentAt: userData.lastTestEmailSentAt?.toDate?.()?.toISOString() ?? null,
       smtpOverride: userData.smtpOverride ?? '',
     });
@@ -114,13 +130,19 @@ export async function PATCH(request: Request) {
           { status: 400 }
         );
       }
-      if (typeof value !== 'boolean') {
+      // Accept both boolean and { emailEnabled: boolean } formats
+      let boolValue: boolean;
+      if (typeof value === 'boolean') {
+        boolValue = value;
+      } else if (typeof value === 'object' && value !== null && typeof (value as Record<string, unknown>).emailEnabled === 'boolean') {
+        boolValue = (value as { emailEnabled: boolean }).emailEnabled;
+      } else {
         return NextResponse.json(
-          { error: `Preference value for '${key}' must be a boolean` },
+          { error: `Preference value for '${key}' must be a boolean or { emailEnabled: boolean }` },
           { status: 400 }
         );
       }
-      updates[`notificationPreferences.${key}`] = value;
+      updates[`notificationPreferences.${key}`] = boolValue;
       changedKeys.push(key);
     }
 
