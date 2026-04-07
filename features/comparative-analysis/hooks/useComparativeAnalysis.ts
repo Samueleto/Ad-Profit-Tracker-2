@@ -68,7 +68,7 @@ export function useComparativeAnalysis(
       const token = await getToken();
       const headers: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {};
 
-      const url = `/api/networks/comparison?from=${dateFrom}&to=${dateTo}&metric=${selectedMetric}`;
+      const url = `/api/networks/comparison?dateFrom=${dateFrom}&dateTo=${dateTo}&metric=${selectedMetric}`;
       let res = await fetch(url, { headers, cache: 'no-store' });
 
       // 401: try token refresh once
