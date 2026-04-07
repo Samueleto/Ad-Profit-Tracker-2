@@ -98,6 +98,7 @@ export async function GET(request: Request) {
       dateFrom: dateFrom || null,
       dateTo: dateTo || null,
       limit,
+      countries: results,
       byCountry: results,
       total: results.length,
     });
