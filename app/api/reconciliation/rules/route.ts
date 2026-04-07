@@ -8,20 +8,34 @@ import { serializeDoc } from "@/lib/networks/network-helpers";
 // In-memory rate limit: 20 rule updates per hour per uid
 const patchRateLimit = new Map<string, { count: number; resetAt: number }>();
 
+const SUPPORTED_NETWORK_IDS = ["exoclick", "rollerads", "zeydoo", "propush"] as const;
+
 export async function GET(request: Request) {
   const authResult = await verifyAuthToken(request);
   if ("error" in authResult) return authResult.error;
   const uid = authResult.token.uid;
 
   try {
-    const snapshot = await adminDb
-      .collection("reconciliationRules")
-      .where("uid", "==", uid)
-      .orderBy("createdAt", "desc")
-      .get();
+    const [rulesSnap, thresholdsDoc] = await Promise.all([
+      adminDb
+        .collection("reconciliationRules")
+        .where("uid", "==", uid)
+        .orderBy("createdAt", "desc")
+        .get(),
+      adminDb.collection("users").doc(uid).get(),
+    ]);
 
-    const rules = snapshot.docs.map(serializeDoc);
-    return NextResponse.json({ rules });
+    const rules = rulesSnap.docs.map(serializeDoc);
+
+    // Build per-network threshold groups for ValidationRulesEditor
+    const storedThresholds = (thresholdsDoc.data()?.validationThresholds ?? {}) as Record<string, unknown>;
+    const networks = SUPPORTED_NETWORK_IDS.map((networkId) => ({
+      networkId,
+      rules: (storedThresholds[networkId] ?? {}) as Record<string, unknown>,
+      isCustom: !!storedThresholds[networkId],
+    }));
+
+    return NextResponse.json({ rules, networks });
   } catch (error) {
     console.error("GET /api/reconciliation/rules error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -87,7 +101,19 @@ export async function PATCH(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
-    const { ruleId, name, condition, adjustment, networkId, enabled } = body as Record<string, unknown>;
+    const { ruleId, name, condition, adjustment, networkId, enabled, rules } = body as Record<string, unknown>;
+
+    // Threshold format from ValidationRulesEditor: { networkId, rules: {...thresholds} }
+    if (!ruleId && networkId && rules && typeof rules === "object") {
+      if (!isValidNetworkId(String(networkId))) {
+        return NextResponse.json({ error: "Invalid networkId" }, { status: 400 });
+      }
+      await adminDb.collection("users").doc(uid).set(
+        { validationThresholds: { [String(networkId)]: rules } },
+        { merge: true }
+      );
+      return NextResponse.json({ success: true, networkId });
+    }
 
     if (!ruleId || typeof ruleId !== "string") {
       return NextResponse.json({ error: "ruleId is required" }, { status: 400 });
