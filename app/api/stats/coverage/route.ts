@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase-admin/admin";
 import { verifyAuthToken } from "@/lib/firebase-admin/verify-token";
-import { isValidNetworkId } from "@/lib/constants";
+import { isValidNetworkId, SUPPORTED_NETWORKS } from "@/lib/constants";
 
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const MAX_RANGE_DAYS = 90;
@@ -51,12 +51,17 @@ export async function GET(request: Request) {
 
     const statsSnapshot = await statsQuery.get();
     const dates = new Set<string>();
+    // Track which networks have data per date (for gaps computation)
+    const networksByDate: Record<string, Set<string>> = {};
 
     for (const doc of statsSnapshot.docs) {
-      const d = doc.data().date;
+      const data = doc.data();
+      const d = data.date;
       if (typeof d === "string") {
         if (!dateTo || d <= dateTo) {
           dates.add(d);
+          if (!networksByDate[d]) networksByDate[d] = new Set();
+          if (data.networkId) networksByDate[d].add(data.networkId);
         }
       }
     }
@@ -84,12 +89,41 @@ export async function GET(request: Request) {
       };
     });
 
+    // Build gaps: dates in range where at least one expected network has no data
+    const expectedNetworks = networkId ? [networkId] : [...SUPPORTED_NETWORKS];
+    const gaps: { date: string; missingNetworks: string[]; hasSyncErrors?: boolean }[] = [];
+
+    if (dateFrom && dateTo) {
+      const syncErrorDates = new Set<string>(
+        logsSnapshot.docs
+          .filter(d => d.data().action === "sync_failed")
+          .map(d => {
+            const ts = d.data().createdAt?.toDate?.();
+            return ts ? ts.toISOString().slice(0, 10) : null;
+          })
+          .filter((d): d is string => d !== null)
+      );
+
+      const cur = new Date(dateFrom);
+      const end = new Date(dateTo);
+      while (cur <= end) {
+        const day = cur.toISOString().slice(0, 10);
+        const present = networksByDate[day] ?? new Set<string>();
+        const missing = expectedNetworks.filter(n => !present.has(n));
+        if (missing.length > 0) {
+          gaps.push({ date: day, missingNetworks: missing, hasSyncErrors: syncErrorDates.has(day) });
+        }
+        cur.setDate(cur.getDate() + 1);
+      }
+    }
+
     return NextResponse.json({
       networkId: networkId || null,
       dateFrom: dateFrom || null,
       dateTo: dateTo || null,
       coveredDates: Array.from(dates).sort(),
       coveredDaysCount: dates.size,
+      gaps,
       syncHistory,
     });
   } catch (error) {
