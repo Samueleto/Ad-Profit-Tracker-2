@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     // Query adStats for all networks
     let statsQuery = adminDb
       .collection('adStats')
-      .where('userId', '==', uid) as FirebaseFirestore.Query;
+      .where('uid', '==', uid) as FirebaseFirestore.Query;
     if (dateFrom) statsQuery = statsQuery.where('date', '>=', dateFrom);
     if (dateTo) statsQuery = statsQuery.where('date', '<=', dateTo);
 
@@ -48,8 +48,9 @@ export async function GET(request: Request) {
 
     // Get network configs for status
     const configsSnapshot = await adminDb
+      .collection('users')
+      .doc(uid)
       .collection('networkConfigs')
-      .where('userId', '==', uid)
       .get();
 
     const configMap: Record<string, { lastSyncedAt: string | null; lastSyncStatus: string; circuitBreakerOpen: boolean }> = {};
