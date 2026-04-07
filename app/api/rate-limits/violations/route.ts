@@ -33,7 +33,7 @@ export async function GET(request: Request) {
       });
     }
 
-    return NextResponse.json({ violations, total: violations.length });
+    return NextResponse.json({ violations, total: violations.length, hasMore: false, nextCursor: null });
   } catch (error) {
     console.error("GET /api/rate-limits/violations error:", error);
     return NextResponse.json(

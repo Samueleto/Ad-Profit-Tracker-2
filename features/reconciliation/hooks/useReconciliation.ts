@@ -248,9 +248,11 @@ export function useValidationRules() {
 
   useEffect(() => {
     setLoading(true);
-    authFetch<{ rules?: RulesResponse[] } | RulesResponse[]>('/api/reconciliation/rules')
+    authFetch<{ networks?: RulesResponse[]; rules?: RulesResponse[] } | RulesResponse[]>('/api/reconciliation/rules')
       .then(d => {
-        const list = Array.isArray(d) ? d : (d as { rules?: RulesResponse[] }).rules ?? [];
+        // Route returns { networks: [...], rules: [...] }; networks has the per-network threshold format
+        const data = d as { networks?: RulesResponse[]; rules?: RulesResponse[] };
+        const list = Array.isArray(d) ? d : (data.networks ?? data.rules ?? []);
         setRulesByNetwork(list.map(r => ({
           networkId: r.networkId,
           rules: r.rules,

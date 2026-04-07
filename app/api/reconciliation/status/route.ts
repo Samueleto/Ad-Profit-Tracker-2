@@ -21,7 +21,7 @@ export async function GET(request: Request) {
 
     const reports = snapshot.docs.map(serializeDoc);
 
-    return NextResponse.json({ reports, total: reports.length });
+    return NextResponse.json({ reports, statuses: reports, total: reports.length });
   } catch (error) {
     console.error("GET /api/reconciliation/status error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

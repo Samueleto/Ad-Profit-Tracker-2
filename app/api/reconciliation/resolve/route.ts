@@ -29,9 +29,11 @@ export async function PATCH(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
-    const { docIds, resolution } = body as { docIds?: unknown; resolution?: string };
+    const { docIds, ids: bodyIds, resolution } = body as { docIds?: unknown; ids?: unknown; resolution?: string };
 
-    if (!Array.isArray(docIds) || docIds.length === 0) {
+    // Accept both "docIds" (original) and "ids" (hook sends)
+    const rawIds = docIds ?? bodyIds;
+    if (!Array.isArray(rawIds) || rawIds.length === 0) {
       return NextResponse.json({ error: "docIds must be a non-empty array" }, { status: 400 });
     }
 
@@ -40,7 +42,7 @@ export async function PATCH(request: Request) {
     }
 
     // Limit batch size to prevent abuse
-    const ids = (docIds as unknown[]).filter((id) => typeof id === "string").slice(0, 100) as string[];
+    const ids = (rawIds as unknown[]).filter((id) => typeof id === "string").slice(0, 100) as string[];
 
     let resolvedCount = 0;
     let skippedCount = 0;
