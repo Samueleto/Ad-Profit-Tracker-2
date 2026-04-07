@@ -62,7 +62,7 @@ export async function POST(request: Request) {
         action: "sync_triggered",
         networkId,
         jobId: syncRef.id,
-        timestamp: FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
       });
 
       results[networkId] = "queued";

@@ -94,7 +94,7 @@ export async function createAuditLog(
     action,
     networkId,
     details: details || null,
-    timestamp: FieldValue.serverTimestamp(),
+    createdAt: FieldValue.serverTimestamp(),
   });
 }
 
