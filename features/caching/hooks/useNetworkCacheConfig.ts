@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
+import { getAuth } from 'firebase/auth';
 import { db } from '@/lib/firebase/firestore';
 import useSWR, { SWRConfiguration } from 'swr';
 
@@ -40,7 +41,9 @@ export function useNetworkCacheConfig(networkId: string): NetworkCacheConfig {
 
   useEffect(() => {
     if (!networkId) return;
-    const ref = doc(db, 'networkConfigs', networkId);
+    const uid = getAuth().currentUser?.uid;
+    if (!uid) return;
+    const ref = doc(db, 'users', uid, 'networkConfigs', networkId);
     const unsub = onSnapshot(
       ref,
       snap => {
