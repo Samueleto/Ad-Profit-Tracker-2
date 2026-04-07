@@ -58,7 +58,12 @@ export async function GET(request: Request) {
 
     const categories = Object.entries(categoryGroups).map(([cat, count]) => ({ category: cat, count }));
 
-    return NextResponse.json({ articles, categoryGroups: categories, total: articles.length });
+    return NextResponse.json({
+      articles,
+      categoryGroups: categories,
+      categoryCounts: categoryGroups,  // alias expected by useHelpCenter
+      total: articles.length,
+    });
   } catch (error) {
     console.error('help/articles error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
