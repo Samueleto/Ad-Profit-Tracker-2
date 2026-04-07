@@ -20,20 +20,15 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Invalid networkId" }, { status: 400 });
     }
 
-    let query = adminDb
-      .collection("networkConfigs")
-      .where("userId", "==", uid) as FirebaseFirestore.Query;
-
-    if (networkId) {
-      query = query.where("networkId", "==", networkId);
-    }
-
-    const snapshot = await query.get();
+    const baseRef = adminDb.collection("users").doc(uid).collection("networkConfigs");
+    const snapshot = networkId
+      ? await baseRef.doc(networkId).get().then(d => ({ docs: d.exists ? [d] : [] }))
+      : await baseRef.get();
 
     const configs = snapshot.docs.map((doc) => {
-      const data = doc.data();
+      const data = doc.data()!;
       return {
-        networkId: data.networkId,
+        networkId: doc.id,
         retryAttempts: data.retryAttempts ?? 3,
         timeoutSeconds: data.timeoutSeconds ?? 30,
         isActive: data.isActive ?? false,
@@ -102,30 +97,20 @@ export async function PATCH(request: Request) {
       }
     }
 
-    const snapshot = await adminDb
-      .collection("networkConfigs")
-      .where("userId", "==", uid)
-      .where("networkId", "==", networkId)
-      .limit(1)
-      .get();
+    // Direct subcollection lookup — ownership guaranteed by uid path
+    const configRef = adminDb.collection("users").doc(uid).collection("networkConfigs").doc(networkId);
+    const configDoc = await configRef.get();
 
-    if (snapshot.empty) {
+    if (!configDoc.exists) {
       return NextResponse.json({ error: "Network config not found" }, { status: 404 });
     }
 
-    const doc = snapshot.docs[0];
-
-    // Defense in depth: verify userId field on the document itself
-    if (doc.data().userId !== uid) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    const before = { retryAttempts: doc.data().retryAttempts, timeoutSeconds: doc.data().timeoutSeconds };
+    const before = { retryAttempts: configDoc.data()!.retryAttempts, timeoutSeconds: configDoc.data()!.timeoutSeconds };
     const updates: Record<string, unknown> = { updatedAt: FieldValue.serverTimestamp() };
     if (retryAttempts !== undefined) updates.retryAttempts = Number(retryAttempts);
     if (timeoutSeconds !== undefined) updates.timeoutSeconds = Number(timeoutSeconds);
 
-    await doc.ref.update(updates);
+    await configRef.update(updates);
 
     // Audit log — fire-and-forget
     adminDb.collection("auditLogs").add({

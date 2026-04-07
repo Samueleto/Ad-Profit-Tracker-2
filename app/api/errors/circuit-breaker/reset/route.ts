@@ -36,26 +36,15 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Valid networkId is required" }, { status: 400 });
     }
 
-    // Query and verify ownership before writing
-    const snapshot = await adminDb
-      .collection("networkConfigs")
-      .where("userId", "==", uid)
-      .where("networkId", "==", networkId)
-      .limit(1)
-      .get();
+    // Direct subcollection lookup — ownership guaranteed by uid path
+    const configRef = adminDb.collection("users").doc(uid).collection("networkConfigs").doc(networkId);
+    const configDoc = await configRef.get();
 
-    if (snapshot.empty) {
+    if (!configDoc.exists) {
       return NextResponse.json({ error: "Network config not found" }, { status: 404 });
     }
 
-    const doc = snapshot.docs[0];
-
-    // Defense in depth: verify userId field on the document itself
-    if (doc.data().userId !== uid) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-
-    await doc.ref.update({
+    await configRef.update({
       circuitBreakerState: "closed",
       failureCount: 0,
       lastFailureAt: null,
@@ -67,7 +56,7 @@ export async function POST(request: Request) {
       userId: uid,
       action: "circuit_breaker_reset",
       networkId,
-      metadata: { previousState: doc.data().circuitBreakerState || "unknown" },
+      metadata: { previousState: configDoc.data()?.circuitBreakerState || "unknown" },
       createdAt: FieldValue.serverTimestamp(),
     }).catch((err: Error) => console.error("Audit log write failed:", err));
 

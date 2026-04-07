@@ -24,20 +24,15 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Invalid networkId" }, { status: 400 });
     }
 
-    let query = adminDb
-      .collection("networkConfigs")
-      .where("userId", "==", uid) as FirebaseFirestore.Query;
-
-    if (networkId) {
-      query = query.where("networkId", "==", networkId);
-    }
-
-    const snapshot = await query.get();
+    const baseRef = adminDb.collection("users").doc(uid).collection("networkConfigs");
+    const snapshot = networkId
+      ? await baseRef.doc(networkId).get().then(d => ({ docs: d.exists ? [d] : [] }))
+      : await baseRef.get();
 
     const retryStates = snapshot.docs.map((doc) => {
-      const data = doc.data();
+      const data = doc.data()!;
       return {
-        networkId: data.networkId,
+        networkId: doc.id,
         retryAttempts: data.retryAttempts || 0,
         lastSyncError: sanitizeErrorMessage(data.lastSyncError),
         lastSyncAt: data.lastSyncAt?.toDate?.()?.toISOString() || null,
