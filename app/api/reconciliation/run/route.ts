@@ -88,8 +88,22 @@ export async function POST(request: Request) {
       createdAt: FieldValue.serverTimestamp(),
     });
 
+    // Count anomalous records in the date range for the panel display
+    const anomalySnap = await adminDb
+      .collection("adStats")
+      .where("uid", "==", uid)
+      .where("date", ">=", dateFrom)
+      .where("date", "<=", dateTo)
+      .where("validationStatus", "==", "anomaly")
+      .count()
+      .get();
+    const anomaliesFound = anomalySnap.data().count;
+
     const report = await reportRef.get();
-    return NextResponse.json({ report: serializeDoc(report) });
+    return NextResponse.json({
+      report: serializeDoc(report),
+      anomaliesFound,
+    });
   } catch (error) {
     console.error("POST /api/reconciliation/run error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
