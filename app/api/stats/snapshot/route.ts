@@ -202,7 +202,7 @@ export async function DELETE(request: Request) {
       userId: uid,
       action: "snapshot_deleted",
       networkId: networkId || null,
-      metadata: { date, deletedCount },
+      details: { date, deletedCount },
       createdAt: FieldValue.serverTimestamp(),
     }).catch((err: Error) => console.error("Audit log write failed:", err));
 

@@ -88,7 +88,7 @@ export async function GET(request: Request) {
         id: doc.id,
         action: data.action,
         networkId: data.networkId,
-        details: data.details,
+        details: data.details ?? data.metadata ?? null,
         createdAt: (data.createdAt as { toDate?: () => Date })?.toDate?.()?.toISOString() || null,
       };
     });
@@ -150,7 +150,7 @@ export async function POST(request: Request) {
       userId: uid,
       action,
       networkId: networkId || null,
-      metadata: safeMetadata,
+      details: safeMetadata,
       ipAddress,
       userAgent,
       createdAt: FieldValue.serverTimestamp(),
