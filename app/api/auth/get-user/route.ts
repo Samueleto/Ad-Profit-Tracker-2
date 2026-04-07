@@ -20,17 +20,19 @@ export async function GET(request: Request) {
     const data = userDoc.data()!;
 
     return NextResponse.json({
-      uid: data.uid,
-      email: data.email,
-      displayName: data.displayName,
-      photoURL: data.photoURL,
-      authProvider: data.authProvider,
-      role: data.role,
-      createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
-      lastLoginAt: data.lastLoginAt?.toDate?.()?.toISOString() || null,
-      preferences: data.preferences,
-      onboardingCompletedAt: data.onboardingCompletedAt?.toDate?.()?.toISOString() || null,
-      onboardingSkipped: data.onboardingSkipped || false,
+      user: {
+        uid: data.uid,
+        email: data.email,
+        displayName: data.displayName,
+        photoURL: data.photoURL,
+        authProvider: data.authProvider,
+        role: data.role,
+        createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
+        lastLoginAt: data.lastLoginAt?.toDate?.()?.toISOString() || null,
+        preferences: data.preferences,
+        onboardingCompletedAt: data.onboardingCompletedAt?.toDate?.()?.toISOString() || null,
+        onboardingSkipped: data.onboardingSkipped || false,
+      },
     });
   } catch (error) {
     console.error("get-user error:", error);
