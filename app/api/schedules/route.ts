@@ -9,7 +9,22 @@ export async function GET(request: Request) {
   if ("error" in authResult) return authResult.error;
   const uid = authResult.token.uid;
 
+  const { searchParams } = new URL(request.url);
+  const reportId = searchParams.get("reportId");
+
   try {
+    if (reportId) {
+      // Return the single schedule for this report (if any)
+      const snapshot = await adminDb
+        .collection("schedules")
+        .where("uid", "==", uid)
+        .where("reportId", "==", reportId)
+        .limit(1)
+        .get();
+      const schedule = snapshot.empty ? null : serializeDoc(snapshot.docs[0]);
+      return NextResponse.json({ schedule });
+    }
+
     const snapshot = await adminDb
       .collection("schedules")
       .where("uid", "==", uid)
