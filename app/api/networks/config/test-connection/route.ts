@@ -80,7 +80,7 @@ export async function POST(request: Request) {
       userId: uid,
       action: "connection_test",
       networkId,
-      metadata: { status: connected ? "connected" : "failed" },
+      details: { status: connected ? "connected" : "failed" },
       createdAt: FieldValue.serverTimestamp(),
     }).catch((err: Error) => console.error("Audit log write failed:", err));
 
