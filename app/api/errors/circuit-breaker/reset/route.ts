@@ -56,7 +56,7 @@ export async function POST(request: Request) {
       userId: uid,
       action: "circuit_breaker_reset",
       networkId,
-      metadata: { previousState: configDoc.data()?.circuitBreakerState || "unknown" },
+      details: { previousState: configDoc.data()?.circuitBreakerState || "unknown" },
       createdAt: FieldValue.serverTimestamp(),
     }).catch((err: Error) => console.error("Audit log write failed:", err));
 

@@ -106,7 +106,7 @@ export async function POST(request: Request) {
       action: 'manual_sync_triggered',
       resourceType: 'sync',
       resourceId: 'export',
-      metadata: {
+      details: {
         sheetsIncluded: sheets,
         dateFrom,
         dateTo,

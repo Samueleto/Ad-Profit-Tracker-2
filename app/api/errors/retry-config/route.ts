@@ -117,7 +117,7 @@ export async function PATCH(request: Request) {
       userId: uid,
       action: "retry_config_updated",
       networkId,
-      metadata: {
+      details: {
         before,
         after: {
           retryAttempts: updates.retryAttempts ?? before.retryAttempts,

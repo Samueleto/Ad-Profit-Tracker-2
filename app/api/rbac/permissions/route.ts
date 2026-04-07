@@ -197,7 +197,7 @@ export async function PATCH(request: Request) {
       userId: uid,
       action: 'rbac_permissions_updated',
       resourceType: 'rbac',
-      metadata: { role, permissions, workspaceId },
+      details: { role, permissions, workspaceId },
       status: 'success',
       createdAt: FieldValue.serverTimestamp(),
     }).catch(err => console.error('audit log write failed:', err));

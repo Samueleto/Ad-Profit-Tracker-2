@@ -61,7 +61,7 @@ export async function DELETE(request: Request) {
       userId: uid,
       action: "audit_logs_cleared",
       networkId: networkId || null,
-      metadata: { deletedCount, scope: networkId ? `networkId:${networkId}` : "all" },
+      details: { deletedCount, scope: networkId ? `networkId:${networkId}` : "all" },
       createdAt: FieldValue.serverTimestamp(),
     });
 

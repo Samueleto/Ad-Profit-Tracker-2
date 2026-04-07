@@ -56,7 +56,7 @@ export async function DELETE(request: Request) {
       userId: uid,
       action: 'clear_all',
       resourceType: 'notification',
-      metadata: { clearedCount },
+      details: { clearedCount },
       status: 'success',
       createdAt: FieldValue.serverTimestamp(),
     }).catch(err => console.error('audit log write failed:', err));
@@ -68,7 +68,7 @@ export async function DELETE(request: Request) {
       userId: uid,
       action: 'clear_all',
       resourceType: 'notification',
-      metadata: {},
+      details: {},
       status: 'failure',
       createdAt: FieldValue.serverTimestamp(),
     }).catch(err => console.error('audit log write failed:', err));

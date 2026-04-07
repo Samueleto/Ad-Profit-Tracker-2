@@ -157,7 +157,7 @@ export async function PATCH(request: Request) {
       userId: uid,
       action: 'preferences_updated',
       resourceType: 'notification',
-      metadata: { changedPreferenceTypes: changedKeys, updates: body },
+      details: { changedPreferenceTypes: changedKeys, updates: body },
       status: 'success',
       createdAt: FieldValue.serverTimestamp(),
     }).catch(err => console.error('audit log write failed:', err));

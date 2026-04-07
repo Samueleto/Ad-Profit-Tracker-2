@@ -87,7 +87,7 @@ export async function POST(request: Request) {
         userId: uid,
         action: "backfill_failed",
         networkId,
-        metadata: {
+        details: {
           dateFrom,
           dateTo,
           error: (fetchError as Error).message?.slice(0, 200) ?? "fetch failed",
@@ -141,7 +141,7 @@ export async function POST(request: Request) {
       userId: uid,
       action: "backfill_completed",
       networkId,
-      metadata: {
+      details: {
         dateFrom,
         dateTo,
         rowsFetched: statsArray.length,

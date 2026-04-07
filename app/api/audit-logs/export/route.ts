@@ -51,7 +51,7 @@ export async function GET(request: Request) {
         id: doc.id,
         action: data.action,
         networkId: data.networkId || null,
-        metadata: data.metadata || null,
+        details: data.details ?? data.metadata ?? null,
         createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
       };
     });
@@ -64,13 +64,13 @@ export async function GET(request: Request) {
     }
 
     if (format === "csv") {
-      const header = "id,action,networkId,metadata,createdAt\n";
+      const header = "id,action,networkId,details,createdAt\n";
       const rows = logs.map((log) =>
         [
           log.id,
           log.action,
           log.networkId || "",
-          JSON.stringify(log.metadata ?? ""),
+          JSON.stringify((log as Record<string, unknown>).details ?? ""),
           log.createdAt || "",
         ].join(",")
       );
