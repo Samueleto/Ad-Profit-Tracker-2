@@ -83,7 +83,16 @@ export async function GET(request: Request) {
       dateTo,
       dimension,
       breakdown,
+      rows: breakdown,
+      networks: breakdown,
+      countries: breakdown,
       total: breakdown.length,
+      summary: breakdown.reduce((acc, b) => {
+        const row = b as Record<string, number>;
+        acc.totalRevenue = (acc.totalRevenue ?? 0) + (row.revenue ?? 0);
+        acc.totalCost = (acc.totalCost ?? 0) + (row.cost ?? 0);
+        return acc;
+      }, {} as Record<string, number>),
       cachedAt: new Date().toISOString(),
     };
 
