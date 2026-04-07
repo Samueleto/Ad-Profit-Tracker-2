@@ -137,7 +137,7 @@ export function useNetworkConfigs(): UseNetworkConfigsResult {
           return;
         }
         const data = await res.json();
-        const list: NetworkConfig[] = data.networks ?? data ?? [];
+        const list: NetworkConfig[] = data.configs ?? data.networks ?? [];
         setNetworks(sortByDisplayOrder(list));
       } catch {
         if (mountedRef.current) {
