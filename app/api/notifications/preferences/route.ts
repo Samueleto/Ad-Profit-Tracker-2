@@ -38,8 +38,26 @@ export async function GET(request: Request) {
 
   try {
     const userDoc = await adminDb.collection('users').doc(uid).get();
-    const preferences = userDoc.data()?.notificationPreferences ?? {};
-    return NextResponse.json({ preferences });
+    const userData = userDoc.data() ?? {};
+    const preferences = userData.notificationPreferences ?? {};
+
+    // Build emailAlerts map expected by EmailAlertPreferencesSection
+    // Each preference key maps to { emailEnabled: boolean }
+    const emailAlerts: Record<string, { emailEnabled: boolean }> = {};
+    for (const [key, value] of Object.entries(preferences)) {
+      if (typeof value === 'boolean') {
+        emailAlerts[key] = { emailEnabled: value };
+      }
+    }
+
+    return NextResponse.json({
+      preferences,
+      emailAlerts,
+      // Flatten convenience fields for the email alerts section
+      alertDeliveryEmail: preferences.alertDeliveryEmail ?? null,
+      lastTestEmailSentAt: userData.lastTestEmailSentAt?.toDate?.()?.toISOString() ?? null,
+      smtpOverride: userData.smtpOverride ?? '',
+    });
   } catch (error) {
     console.error('GET /api/notifications/preferences error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
