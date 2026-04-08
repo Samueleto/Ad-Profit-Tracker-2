@@ -81,7 +81,6 @@ export async function POST(request: Request) {
           ecpm: Number(stat.ecpm) || 0,
           cost: Number(stat.cost) || 0,
           country: stat.country || null,
-          rawData: stat,
           syncedAt: FieldValue.serverTimestamp(),
         },
         { merge: true }
