@@ -84,7 +84,7 @@ export async function GET(request: Request) {
         latencyMs: meta.latencyMs != null ? Number(meta.latencyMs) : null,
         dateFrom: meta.dateFrom ? String(meta.dateFrom) : null,
         dateTo: meta.dateTo ? String(meta.dateTo) : null,
-        createdAt: String(data.timestamp ?? new Date().toISOString()),
+        createdAt: String(data.createdAt ?? new Date().toISOString()),
       };
     });
 
