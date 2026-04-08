@@ -8,6 +8,8 @@ export interface UserPreferences {
     dailySummaryEmail: boolean;
     weeklyReportEmail: boolean;
   };
+  themePreference: string;
+  accentColor: string;
   updatedAt: FirebaseFirestore.Timestamp | null;
 }
 
@@ -19,6 +21,8 @@ export const DEFAULT_PREFERENCES: Omit<UserPreferences, "updatedAt"> & { updated
     dailySummaryEmail: false,
     weeklyReportEmail: false,
   },
+  themePreference: "light",
+  accentColor: "#6366f1",
   updatedAt: null,
 };
 
@@ -77,6 +81,12 @@ export function buildPreferencesUpdateObject(
     if (patch.notifications.weeklyReportEmail !== undefined) {
       updateObj["preferences.notifications.weeklyReportEmail"] = patch.notifications.weeklyReportEmail;
     }
+  }
+  if (patch.themePreference !== undefined) {
+    updateObj["preferences.themePreference"] = patch.themePreference;
+  }
+  if (patch.accentColor !== undefined) {
+    updateObj["preferences.accentColor"] = patch.accentColor;
   }
 
   return updateObj;
