@@ -138,7 +138,12 @@ export function useNetworkConfigs(): UseNetworkConfigsResult {
         }
         const data = await res.json();
         const list: NetworkConfig[] = data.configs ?? data.networks ?? [];
-        setNetworks(sortByDisplayOrder(list));
+        // No configs saved yet — initialize with defaults so the UI is never blank
+        if (list.length === 0) {
+          setNetworks(SUPPORTED_NETWORKS.map((id, idx) => buildDefaultConfig(id, idx)));
+        } else {
+          setNetworks(sortByDisplayOrder(list));
+        }
       } catch {
         if (mountedRef.current) {
           setError('Unable to load network settings — check your connection.');

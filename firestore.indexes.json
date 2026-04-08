@@ -50,7 +50,7 @@
       "collectionGroup": "adStats",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "uid", "order": "ASCENDING" },
         { "fieldPath": "networkId", "order": "ASCENDING" },
         { "fieldPath": "date", "order": "DESCENDING" }
       ]
@@ -59,7 +59,7 @@
       "collectionGroup": "adStats",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "uid", "order": "ASCENDING" },
         { "fieldPath": "date", "order": "ASCENDING" },
         { "fieldPath": "networkId", "order": "ASCENDING" }
       ]
@@ -68,7 +68,7 @@
       "collectionGroup": "adStats",
       "queryScope": "COLLECTION",
       "fields": [
-        { "fieldPath": "userId", "order": "ASCENDING" },
+        { "fieldPath": "uid", "order": "ASCENDING" },
         { "fieldPath": "networkId", "order": "ASCENDING" },
         { "fieldPath": "country", "order": "ASCENDING" },
         { "fieldPath": "date", "order": "DESCENDING" }
