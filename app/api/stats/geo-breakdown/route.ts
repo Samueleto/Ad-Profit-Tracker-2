@@ -85,9 +85,24 @@ export async function GET(request: Request) {
       countryMap.set(country, existing);
     }
 
-    const results = Array.from(countryMap.values())
-      .sort((a, b) => b.revenue - a.revenue)
-      .slice(0, limit);
+    const allRows = Array.from(countryMap.values()).sort((a, b) => b.revenue - a.revenue);
+    const totalRevenue = allRows.reduce((s, r) => s + r.revenue, 0);
+    const totalCost = allRows.reduce((s, r) => s + r.cost, 0);
+    const totalProfit = totalRevenue - totalCost;
+
+    const results = allRows.slice(0, limit).map(r => ({
+      countryCode: r.country,
+      countryName: r.country,
+      flagEmoji: '',
+      impressions: r.impressions,
+      clicks: r.clicks,
+      revenue: r.revenue,
+      cost: r.cost,
+      netProfit: r.revenue - r.cost,
+      roi: r.cost > 0 ? ((r.revenue - r.cost) / r.cost) * 100 : null,
+      metricShare: totalRevenue > 0 ? (r.revenue / totalRevenue) * 100 : 0,
+      colorCode: 'neutral',
+    }));
 
     return NextResponse.json({
       networkId: networkId || null,
@@ -97,6 +112,9 @@ export async function GET(request: Request) {
       countries: results,
       byCountry: results,
       total: results.length,
+      totalRevenue,
+      totalCost,
+      totalProfit,
     });
   } catch (error) {
     console.error("GET /api/stats/geo-breakdown error:", error);
