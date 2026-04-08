@@ -17,8 +17,15 @@ export async function DELETE(request: Request) {
   const uid = authResult.token.uid;
 
   try {
-    const { searchParams } = new URL(request.url);
-    const networkId = searchParams.get("networkId");
+    let networkId: string | null = null;
+    try {
+      const body = await request.json();
+      networkId = body?.networkId ?? null;
+    } catch {
+      // Fall back to query param for GET-style DELETE calls
+      const { searchParams } = new URL(request.url);
+      networkId = searchParams.get("networkId");
+    }
 
     if (!networkId || !isValidNetworkId(networkId)) {
       return NextResponse.json({ error: "Invalid or missing networkId" }, { status: 400 });
