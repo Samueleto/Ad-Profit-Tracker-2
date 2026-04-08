@@ -397,7 +397,7 @@ export function useManualRefresh() {
     if (allRateLimit !== null) return;
     if (triggeredNetworks.size === SUPPORTED_NETWORKS.length) return;
 
-    const path = '/api/sync/manual';
+    const path = '/api/networks/sync-all';
     const init: RequestInit = { method: 'POST', body: JSON.stringify({}) };
 
     try {
@@ -422,12 +422,12 @@ export function useManualRefresh() {
         return;
       }
 
-      const body: TriggerResponseBody = await res.json().catch(() => ({}));
-      applyTriggerResponse(body, SUPPORTED_NETWORKS as unknown as NetworkId[]);
+      // sync-all returns counts, not per-network arrays — treat all networks as triggered
+      applyTriggerResponse({ triggered: SUPPORTED_NETWORKS as unknown as NetworkId[], failed: [] }, SUPPORTED_NETWORKS as unknown as NetworkId[]);
     } catch {
       setTriggerError('No internet connection. Please check your network and try again.');
     }
-  }, [allRateLimit, triggeredNetworks, retryAfter401, handleResponseStatus]);
+  }, [allRateLimit, triggeredNetworks, retryAfter401, handleResponseStatus, applyTriggerResponse]);
 
   const triggerNetwork = useCallback(async (networkId: NetworkId) => {
     if (networkRateLimits[networkId]) return;
