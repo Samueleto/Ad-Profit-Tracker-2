@@ -42,23 +42,19 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "endDate must be in YYYY-MM-DD format" }, { status: 400 });
     }
 
-    // Query auditLogs scoped to uid and resourceType=sync
+    // Query auditLogs scoped to uid — build incrementally so filters compose
     let query = adminDb
       .collection("auditLogs")
-      .where("userId", "==", uid)
-      .where("action", "in", ["sync_completed", "sync_failed", "sync_triggered", "backfill_completed", "backfill_failed"])
-      .orderBy("createdAt", "desc")
-      .limit(limit) as FirebaseFirestore.Query;
+      .where("userId", "==", uid) as FirebaseFirestore.Query;
 
     if (networkId) {
-      query = adminDb
-        .collection("auditLogs")
-        .where("userId", "==", uid)
-        .where("networkId", "==", networkId)
-        .where("action", "in", ["sync_completed", "sync_failed", "sync_triggered", "backfill_completed", "backfill_failed"])
-        .orderBy("createdAt", "desc")
-        .limit(limit);
+      query = query.where("networkId", "==", networkId);
     }
+
+    query = query
+      .where("action", "in", ["sync_completed", "sync_failed", "sync_triggered", "backfill_completed", "backfill_failed"])
+      .orderBy("createdAt", "desc")
+      .limit(limit);
 
     const snapshot = await query.get();
 
@@ -68,7 +64,8 @@ export async function GET(request: Request) {
         id: doc.id,
         action: data.action,
         networkId: data.networkId || null,
-        metadata: data.metadata || null,
+        // details is the canonical field; fall back to metadata for older docs
+        metadata: data.details ?? data.metadata ?? null,
         createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
       };
     });
