@@ -84,7 +84,7 @@ export async function GET(request: Request) {
           : "never";
 
         const lastSyncedAt = lastLog
-          ? String(lastLog.timestamp ?? "")
+          ? String(lastLog.createdAt ?? "")
           : null;
 
         const cbOpen = cbData ? Boolean(cbData.isOpen) : false;
