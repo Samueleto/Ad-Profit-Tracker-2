@@ -50,30 +50,26 @@ export async function GET(request: Request) {
     let query = adminDb
       .collection("adStats")
       .where("uid", "==", uid)
-      .where("networkId", "==", "rollerads")
-      .where("country", "!=", null);
+      .where("networkId", "==", "rollerads") as FirebaseFirestore.Query;
 
     if (dateFrom) {
       query = query.where("date", ">=", dateFrom);
     }
-
-    const snapshot = await query.get();
-    let docs = snapshot.docs.map(serializeDoc);
-
     if (dateTo) {
-      docs = docs.filter((s) => {
-        const d = s && (s as Record<string, unknown>).date;
-        return typeof d === "string" && d <= dateTo;
-      });
+      query = query.where("date", "<=", dateTo);
     }
 
-    // Aggregate by country
+    const snapshot = await query.get();
+    const docs = snapshot.docs.map(serializeDoc);
+
+    // Aggregate by country — skip records without country data
     const countryMap = new Map<string, { impressions: number; clicks: number; revenue: number; cost: number; country: string }>();
 
     for (const doc of docs) {
       if (!doc) continue;
       const row = doc as Record<string, unknown>;
-      const country = (row.country as string) || "unknown";
+      const country = (row.country as string) || "";
+      if (!country) continue;
       const existing = countryMap.get(country) || { impressions: 0, clicks: 0, revenue: 0, cost: 0, country };
       existing.impressions += Number(row.impressions) || 0;
       existing.clicks += Number(row.clicks) || 0;
