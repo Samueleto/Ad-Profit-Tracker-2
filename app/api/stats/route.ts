@@ -19,34 +19,18 @@ export async function GET(request: Request) {
 
     let query = adminDb
       .collection("adStats")
-      .where("uid", "==", uid)
-      .orderBy("date", "desc")
-      .limit(limit);
+      .where("uid", "==", uid) as FirebaseFirestore.Query;
 
     if (networkId && isValidNetworkId(networkId)) {
-      query = adminDb
-        .collection("adStats")
-        .where("uid", "==", uid)
-        .where("networkId", "==", networkId)
-        .orderBy("date", "desc")
-        .limit(limit);
+      query = query.where("networkId", "==", networkId);
     }
+    if (dateFrom) query = query.where("date", ">=", dateFrom);
+    if (dateTo) query = query.where("date", "<=", dateTo);
+
+    query = query.orderBy("date", "desc").limit(limit);
 
     const snapshot = await query.get();
-    let stats = snapshot.docs.map(serializeDoc).filter(Boolean);
-
-    if (dateFrom) {
-      stats = stats.filter((s) => {
-        const d = (s as Record<string, unknown>)?.date;
-        return typeof d === 'string' && d >= dateFrom;
-      });
-    }
-    if (dateTo) {
-      stats = stats.filter((s) => {
-        const d = (s as Record<string, unknown>)?.date;
-        return typeof d === 'string' && d <= dateTo;
-      });
-    }
+    const stats = snapshot.docs.map(serializeDoc).filter(Boolean);
 
     return NextResponse.json({ stats, total: stats.length });
   } catch (error) {
