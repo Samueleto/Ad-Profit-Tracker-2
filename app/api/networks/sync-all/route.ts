@@ -68,7 +68,11 @@ export async function POST(request: Request) {
       results[networkId] = "queued";
     }
 
-    return NextResponse.json({ success: true, results });
+    const triggered = Object.values(results).filter(v => v === "queued").length;
+    const skipped = Object.values(results).filter(v => v.startsWith("skipped")).length;
+    const failed = Object.values(results).filter(v => v.startsWith("error")).length;
+
+    return NextResponse.json({ success: true, results, triggered, skipped, failed });
   } catch (error) {
     console.error("POST /api/networks/sync-all error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
