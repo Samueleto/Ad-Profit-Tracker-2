@@ -99,10 +99,17 @@ export async function POST(request: Request) {
       .get();
     const anomaliesFound = anomalySnap.data().count;
 
+    const recordsChecked = Object.values(networkSummaries).reduce((a, b) => a + b.recordCount, 0);
     const report = await reportRef.get();
     return NextResponse.json({
       report: serializeDoc(report),
+      // Fields matching ReconciliationRunResult type expected by useRunReconciliation hook
+      dateFrom,
+      dateTo,
+      recordsChecked,
       anomaliesFound,
+      anomalyFlags: [],
+      ranAt: new Date().toISOString(),
     });
   } catch (error) {
     console.error("POST /api/reconciliation/run error:", error);
