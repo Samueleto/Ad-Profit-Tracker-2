@@ -32,6 +32,7 @@ export function useExportLogs(): UseExportLogsResult {
 
       const makeRequest = async (t: string | null | undefined) => {
         const params = new URLSearchParams();
+        params.set('format', 'csv');
         if (filters.selectedActions.length) params.set('action', filters.selectedActions.join(','));
         if (filters.dateRange.startDate) params.set('startDate', filters.dateRange.startDate);
         if (filters.dateRange.endDate) params.set('endDate', filters.dateRange.endDate);
