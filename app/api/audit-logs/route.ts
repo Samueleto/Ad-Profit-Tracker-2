@@ -67,22 +67,20 @@ export async function GET(request: Request) {
 
     let query = adminDb
       .collection("auditLogs")
-      .where("userId", "==", uid)
-      .orderBy("createdAt", "desc")
-      .limit(limit) as FirebaseFirestore.Query;
+      .where("userId", "==", uid) as FirebaseFirestore.Query;
 
     if (networkId) {
-      query = adminDb
-        .collection("auditLogs")
-        .where("userId", "==", uid)
-        .where("networkId", "==", networkId)
-        .orderBy("createdAt", "desc")
-        .limit(limit);
+      query = query.where("networkId", "==", networkId);
     }
+
+    query = query.orderBy("createdAt", "desc").limit(limit + 1);
 
     const snapshot = await query.get();
 
-    let logs = snapshot.docs.map((doc) => {
+    const hasMore = snapshot.docs.length > limit;
+    const pageDocs = hasMore ? snapshot.docs.slice(0, limit) : snapshot.docs;
+
+    let logs = pageDocs.map((doc) => {
       const data = doc.data() as Record<string, unknown>;
       return {
         id: doc.id,
@@ -93,9 +91,10 @@ export async function GET(request: Request) {
       };
     });
 
-    // Strict in-memory filters — action uses exact equality to prevent bypass
+    // Support comma-separated action filter
     if (action) {
-      logs = logs.filter((log) => log.action === action);
+      const actions = action.split(",").map(s => s.trim()).filter(Boolean);
+      logs = logs.filter((log) => actions.includes(String(log.action)));
     }
     if (startDate) {
       logs = logs.filter((log) => log.createdAt && log.createdAt >= startDate);
@@ -104,7 +103,9 @@ export async function GET(request: Request) {
       logs = logs.filter((log) => log.createdAt && log.createdAt <= endDate + "T23:59:59Z");
     }
 
-    return NextResponse.json({ logs, total: logs.length });
+    const nextCursor = hasMore && pageDocs.length > 0 ? pageDocs[pageDocs.length - 1].id : null;
+
+    return NextResponse.json({ logs, total: logs.length, hasMore, nextCursor });
   } catch (error) {
     console.error("GET /api/audit-logs error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
