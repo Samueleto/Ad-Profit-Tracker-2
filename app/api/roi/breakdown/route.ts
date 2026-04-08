@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import NodeCache from "node-cache";
 import { adminDb } from "@/lib/firebase-admin/admin";
 import { verifyAuthToken } from "@/lib/firebase-admin/verify-token";
-import { computeRoi } from "@/lib/roi/formula";
+import { computeRoi, getColorCode, getRoiIndicator } from "@/lib/roi/formula";
 
 const breakdownCache = new NodeCache({ stdTTL: 300, checkperiod: 60 });
 
@@ -70,14 +70,32 @@ export async function GET(request: Request) {
       groups[key].clicks += Number(d.clicks) || 0;
     });
 
+    let totalRevenue = 0;
+    let totalCost = 0;
+    for (const val of Object.values(groups)) {
+      totalRevenue += val.revenue;
+      totalCost += val.cost;
+    }
+
     const breakdown = Object.entries(groups)
       .sort(([a], [b]) => a.localeCompare(b))
-      .map(([key, val]) => ({
-        [dimension]: key,
-        ...val,
-        roi: computeRoi(val.revenue, val.cost),
-      }));
+      .map(([key, val]) => {
+        const roi = computeRoi(val.revenue, val.cost);
+        const netProfit = val.revenue - val.cost;
+        return {
+          key,
+          label: key,
+          [dimension]: key,
+          ...val,
+          netProfit,
+          roi,
+          roiIndicator: getRoiIndicator(roi),
+          colorCode: getColorCode(roi),
+          contributionPercent: totalRevenue > 0 ? (val.revenue / totalRevenue) * 100 : 0,
+        };
+      });
 
+    const overallRoi = computeRoi(totalRevenue, totalCost);
     const result = {
       dateFrom,
       dateTo,
@@ -87,12 +105,12 @@ export async function GET(request: Request) {
       networks: breakdown,
       countries: breakdown,
       total: breakdown.length,
-      summary: breakdown.reduce((acc, b) => {
-        const row = b as Record<string, number>;
-        acc.totalRevenue = (acc.totalRevenue ?? 0) + (row.revenue ?? 0);
-        acc.totalCost = (acc.totalCost ?? 0) + (row.cost ?? 0);
-        return acc;
-      }, {} as Record<string, number>),
+      summary: {
+        totalRevenue,
+        totalCost,
+        netProfit: totalRevenue - totalCost,
+        overallRoi,
+      },
       cachedAt: new Date().toISOString(),
     };
 
