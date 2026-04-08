@@ -40,7 +40,7 @@ export async function GET(request: Request) {
       };
     });
 
-    return NextResponse.json({ retryStates });
+    return NextResponse.json({ retryStates, networks: retryStates });
   } catch (error) {
     console.error("GET /api/errors/retry-state error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
