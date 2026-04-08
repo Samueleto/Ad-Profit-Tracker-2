@@ -78,29 +78,15 @@ export function makeStatsHandler(networkId: NetworkId) {
       let query = adminDb
         .collection("adStats")
         .where("uid", "==", uid)
-        .where("networkId", "==", networkId)
-        .orderBy("date", "desc")
-        .limit(limit);
+        .where("networkId", "==", networkId) as FirebaseFirestore.Query;
 
-      if (dateFrom) {
-        query = adminDb
-          .collection("adStats")
-          .where("uid", "==", uid)
-          .where("networkId", "==", networkId)
-          .where("date", ">=", dateFrom)
-          .orderBy("date", "desc")
-          .limit(limit);
-      }
+      if (dateFrom) query = query.where("date", ">=", dateFrom);
+      if (dateTo) query = query.where("date", "<=", dateTo);
+
+      query = query.orderBy("date", "desc").limit(limit);
 
       const snapshot = await query.get();
-      let stats = snapshot.docs.map(serializeDoc);
-
-      if (dateTo) {
-        stats = stats.filter((s) => {
-          const d = s && (s as Record<string, unknown>).date;
-          return typeof d === "string" && d <= dateTo;
-        });
-      }
+      const stats = snapshot.docs.map(serializeDoc);
 
       const totals = stats.reduce(
         (acc: { impressions: number; clicks: number; revenue: number; cost: number }, s) => {
@@ -261,10 +247,10 @@ export function makeSyncStatusHandler(networkId: NetworkId) {
     try {
       const logsSnapshot = await adminDb
         .collection("auditLogs")
-        .where("uid", "==", uid)
+        .where("userId", "==", uid)
         .where("networkId", "==", networkId)
         .where("action", "in", ["sync_completed", "sync_failed", "sync_triggered"])
-        .orderBy("timestamp", "desc")
+        .orderBy("createdAt", "desc")
         .limit(10)
         .get();
 
