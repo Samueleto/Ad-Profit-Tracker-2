@@ -86,6 +86,8 @@ export async function GET(request: Request) {
           key,
           label: key,
           [dimension]: key,
+          // GeoRoiEnrichment expects countryCode; provide it when grouping by country
+          ...(dimension === "country" ? { countryCode: key } : {}),
           ...val,
           netProfit,
           roi,
