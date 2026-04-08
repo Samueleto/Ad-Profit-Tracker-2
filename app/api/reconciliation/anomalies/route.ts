@@ -44,16 +44,12 @@ export async function GET(request: Request) {
     if (dateFrom) {
       query = query.where("date", ">=", dateFrom);
     }
+    if (dateTo) {
+      query = query.where("date", "<=", dateTo);
+    }
 
     const snapshot = await query.orderBy("date", "desc").limit(limit).get();
     let anomalies = snapshot.docs.map(serializeDoc).filter(Boolean);
-
-    if (dateTo) {
-      anomalies = anomalies.filter((a) => {
-        const d = (a as Record<string, unknown>)?.date;
-        return typeof d === "string" && d <= dateTo;
-      });
-    }
 
     if (severity) {
       anomalies = anomalies.filter((a) => (a as Record<string, unknown>)?.severity === severity);

@@ -122,6 +122,24 @@
       ]
     },
     {
+      "collectionGroup": "reconciliationReports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "uid", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "reconciliationReports",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "uid", "order": "ASCENDING" },
+        { "fieldPath": "dateFrom", "order": "ASCENDING" },
+        { "fieldPath": "dateTo", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
       "collectionGroup": "networkConfigs",
       "queryScope": "COLLECTION_GROUP",
       "fields": [
