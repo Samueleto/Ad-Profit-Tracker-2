@@ -99,12 +99,14 @@ export async function GET(request: Request) {
           ? Math.max(0, new Date(completedAt).getTime() - new Date(createdAt).getTime())
           : null;
 
+      const triggeredAt = createdAt ?? new Date(0).toISOString();
       return {
         id: doc.id,
         networkId: (d.networkId as string) ?? '',
         status: deriveStatus(d.action as string),
         triggeredBy: deriveTriggeredBy(details),
-        triggeredAt: createdAt ?? new Date(0).toISOString(),
+        triggeredAt,
+        createdAt: triggeredAt, // alias consumed by SyncHistoryDrawer / SyncHistoryEvent type
         completedAt,
         rowsFetched,
         latencyMs,
