@@ -136,7 +136,7 @@ export function useComparativeAnalysis(
     setSyncFailed(false);
     try {
       const token = await getToken();
-      const res = await fetch('/api/sync/manual', {
+      const res = await fetch('/api/networks/sync-all', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
