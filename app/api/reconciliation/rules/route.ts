@@ -112,7 +112,13 @@ export async function PATCH(request: Request) {
         { validationThresholds: { [String(networkId)]: rules } },
         { merge: true }
       );
-      return NextResponse.json({ success: true, networkId });
+      return NextResponse.json({
+        success: true,
+        networkId,
+        rules,
+        isCustom: true,
+        updatedAt: new Date().toISOString(),
+      });
     }
 
     if (!ruleId || typeof ruleId !== "string") {
