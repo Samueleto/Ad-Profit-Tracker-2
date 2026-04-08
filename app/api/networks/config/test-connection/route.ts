@@ -87,7 +87,10 @@ export async function POST(request: Request) {
     if (connected) {
       return NextResponse.json({ success: true, networkId, status: "connected" });
     }
-    return NextResponse.json({ success: false, networkId, status: "failed", error: "Connection test failed" });
+    return NextResponse.json(
+      { success: false, networkId, status: "failed", message: "Connection test failed — network API unreachable" },
+      { status: 502 }
+    );
   } catch (error) {
     console.error("POST /api/networks/config/test-connection error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
