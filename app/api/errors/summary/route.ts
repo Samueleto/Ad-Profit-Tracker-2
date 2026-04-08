@@ -57,12 +57,27 @@ export async function GET(request: Request) {
       }
     }
 
+    const total = successCount + failureCount;
+    const overallSuccessRate = total > 0 ? successCount / total : 0;
+    const networks = Object.entries(networkBreakdown).map(([netId, { success, failure }]) => ({
+      networkId: netId,
+      successRate: (success + failure) > 0 ? success / (success + failure) : 0,
+      failureCount: failure,
+    }));
+    const mostProblematicNetwork = networks.length > 0
+      ? networks.reduce((a, b) => a.failureCount > b.failureCount ? a : b).networkId
+      : null;
+
     return NextResponse.json({
       networkId: networkId || null,
       successCount,
       failureCount,
-      total: successCount + failureCount,
+      total,
       networkBreakdown,
+      overallSuccessRate,
+      totalFailures: failureCount,
+      mostProblematicNetwork,
+      networks,
     });
   } catch (error) {
     console.error("GET /api/errors/summary error:", error);

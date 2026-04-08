@@ -42,7 +42,7 @@ export default function ErrorSummaryWidget({ onNetworkClick }: { onNetworkClick?
     setLoading(true);
     setError(false);
     try {
-      const params = new URLSearchParams({ startDate: toISODate(d), endDate: new Date().toISOString().split('T')[0] });
+      const params = new URLSearchParams({ dateFrom: toISODate(d), dateTo: new Date().toISOString().split('T')[0] });
       let res = await authFetch(`/api/errors/summary?${params}`);
       if (res.status === 401) {
         res = await authFetch(`/api/errors/summary?${params}`, true);
