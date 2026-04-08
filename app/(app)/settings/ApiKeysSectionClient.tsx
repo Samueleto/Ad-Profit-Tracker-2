@@ -2,11 +2,12 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { getAuth } from 'firebase/auth';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { toast } from 'sonner';
 import { AlertCircle } from 'lucide-react';
 import ApiKeyCard from '@/features/settings/components/ApiKeyCard';
 import ApiKeyCardSkeleton from '@/features/settings/components/ApiKeyCardSkeleton';
+import { SUPPORTED_NETWORKS } from '@/lib/constants';
 
 const NETWORK_LABELS: Record<string, string> = {
   exoclick: 'ExoClick',
@@ -14,6 +15,12 @@ const NETWORK_LABELS: Record<string, string> = {
   zeydoo: 'Zeydoo',
   propush: 'ProPush',
 };
+
+const DEFAULT_NETWORKS: NetworkKeyStatus[] = SUPPORTED_NETWORKS.map(networkId => ({
+  networkId,
+  status: 'not_connected',
+  updatedAt: null,
+}));
 
 interface NetworkKeyStatus {
   networkId: string;
@@ -61,14 +68,23 @@ export default function ApiKeysSectionClient() {
     setLoading(true);
     setStatusError(false);
     try {
+      // Wait for Firebase auth to initialize before fetching so we always have a token
+      const auth = getAuth();
+      if (!auth.currentUser) {
+        await new Promise<void>((resolve) => {
+          const unsub = onAuthStateChanged(auth, () => { unsub(); resolve(); });
+        });
+      }
+
       const { res, sessionExpired } = await authFetch('/api/keys/status', { cache: 'no-store' } as RequestInit);
       if (sessionExpired) { handleSessionExpired(); return; }
       if (!res.ok) { setStatusError(true); return; }
       const data: NetworkKeyStatus[] = await res.json();
-      setNetworks(Array.isArray(data) ? data : []);
+      const list = Array.isArray(data) && data.length > 0 ? data : DEFAULT_NETWORKS;
+      setNetworks(list);
     } catch {
-      // Network error
-      setStatusError(true);
+      // Network error — show all networks as not_connected so the user can still add keys
+      setNetworks(DEFAULT_NETWORKS);
     } finally {
       setLoading(false);
     }
