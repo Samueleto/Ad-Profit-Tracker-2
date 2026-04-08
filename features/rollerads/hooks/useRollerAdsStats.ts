@@ -73,7 +73,7 @@ export function useRollerAdsCountries(dateFrom: string, dateTo: string, limit?: 
   const key = `/api/networks/rollerads/stats/by-country?${params}`;
   const { data, error, isLoading, mutate } = useSWR(key, fetchWithToken, { keepPreviousData: true });
   return {
-    countries: data?.countries ?? data ?? [],
+    countries: data?.byCountry ?? data?.countries ?? [],
     totalRevenue: data?.totalRevenue ?? null,
     isLoading,
     error,

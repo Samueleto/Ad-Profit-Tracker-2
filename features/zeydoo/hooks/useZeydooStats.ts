@@ -100,7 +100,7 @@ export function useZeydooTopCountries(dateFrom: string, dateTo: string, limit?: 
   const key = dateFrom && dateTo ? `/api/networks/zeydoo/stats/by-country?${params}` : null;
   const { data, error, isLoading } = useSWR(key, fetchWithToken, { keepPreviousData: true });
   return {
-    countries: (data as Record<string, unknown> & { countries?: unknown[] })?.countries ?? [],
+    countries: (data as Record<string, unknown> & { byCountry?: unknown[]; countries?: unknown[] })?.byCountry ?? (data as Record<string, unknown> & { countries?: unknown[] })?.countries ?? [],
     totalRevenue: (data as Record<string, unknown> & { totalRevenue?: number })?.totalRevenue ?? null,
     isLoading,
     error: error ?? null,

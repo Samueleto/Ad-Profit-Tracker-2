@@ -74,7 +74,7 @@ export function useExoClickCountries(dateFrom: string, dateTo: string, limit?: n
   const key = `/api/networks/exoclick/stats/by-country?${params}`;
   const { data, error, isLoading, mutate } = useSWR(key, fetchWithToken, { keepPreviousData: true });
   return {
-    countries: data?.countries ?? data ?? [],
+    countries: data?.byCountry ?? data?.countries ?? [],
     totalCost: data?.totalCost ?? null,
     isLoading,
     error,
