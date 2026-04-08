@@ -72,7 +72,7 @@ export async function GET(request: Request) {
 
     const feed = page.map((doc) => {
       const data = serializeDoc(doc) as Record<string, unknown>;
-      const meta = (data.metadata as Record<string, unknown>) ?? {};
+      const meta = ((data.details ?? data.metadata) as Record<string, unknown>) ?? {};
       return {
         id: doc.id,
         networkId: String(data.networkId ?? ""),

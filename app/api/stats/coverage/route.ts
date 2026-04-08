@@ -84,7 +84,7 @@ export async function GET(request: Request) {
         id: doc.id,
         action: data.action,
         networkId: data.networkId || null,
-        metadata: data.metadata || null,
+        metadata: data.details ?? data.metadata ?? null,
         createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
       };
     });
