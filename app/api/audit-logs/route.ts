@@ -62,9 +62,23 @@ export async function GET(request: Request) {
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200);
     const networkId = searchParams.get("networkId");
     const action = searchParams.get("action");
-    const startDate = searchParams.get("startDate");
-    const endDate = searchParams.get("endDate");
+    const status = searchParams.get("status"); // 'success' | 'failure'
+    const preset = searchParams.get("preset"); // '7d' | '30d' | '90d'
     const cursor = searchParams.get("cursor");
+
+    // Resolve date range from explicit params or preset
+    let startDate = searchParams.get("startDate");
+    let endDate = searchParams.get("endDate");
+    if (!startDate && !endDate && preset) {
+      const days = preset === "7d" ? 7 : preset === "30d" ? 30 : preset === "90d" ? 90 : null;
+      if (days !== null) {
+        const now = new Date();
+        endDate = now.toISOString().slice(0, 10);
+        const from = new Date(now);
+        from.setDate(now.getDate() - days + 1);
+        startDate = from.toISOString().slice(0, 10);
+      }
+    }
 
     let query = adminDb
       .collection("auditLogs")
@@ -95,9 +109,17 @@ export async function GET(request: Request) {
       const data = doc.data() as Record<string, unknown>;
       return {
         id: doc.id,
+        userId: data.userId ?? uid,
         action: data.action,
-        networkId: data.networkId,
+        resourceType: data.resourceType ?? null,
+        resourceId: data.resourceId ?? null,
+        networkId: data.networkId ?? null,
+        metadata: data.details ?? data.metadata ?? null,
         details: data.details ?? data.metadata ?? null,
+        ipAddress: data.ipAddress ?? null,
+        userAgent: data.userAgent ?? null,
+        status: data.status ?? null,
+        errorMessage: data.errorMessage ?? null,
         createdAt: (data.createdAt as { toDate?: () => Date })?.toDate?.()?.toISOString() || null,
       };
     });
@@ -107,11 +129,14 @@ export async function GET(request: Request) {
       const actions = action.split(",").map(s => s.trim()).filter(Boolean);
       logs = logs.filter((log) => actions.includes(String(log.action)));
     }
+    if (status) {
+      logs = logs.filter((log) => log.status === status);
+    }
     if (startDate) {
-      logs = logs.filter((log) => log.createdAt && log.createdAt >= startDate);
+      logs = logs.filter((log) => log.createdAt && log.createdAt >= startDate!);
     }
     if (endDate) {
-      logs = logs.filter((log) => log.createdAt && log.createdAt <= endDate + "T23:59:59Z");
+      logs = logs.filter((log) => log.createdAt && log.createdAt <= endDate! + "T23:59:59Z");
     }
 
     const nextCursor = hasMore && pageDocs.length > 0 ? pageDocs[pageDocs.length - 1].id : null;
