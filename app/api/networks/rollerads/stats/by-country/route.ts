@@ -82,12 +82,15 @@ export async function GET(request: Request) {
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, limit);
 
+    const totalRevenue = Array.from(countryMap.values()).reduce((s, r) => s + r.revenue, 0);
+
     return NextResponse.json({
       networkId: "rollerads",
       dateFrom: dateFrom || null,
       dateTo: dateTo || null,
       limit,
       byCountry: results,
+      totalRevenue,
       total: results.length,
     });
   } catch (error) {
