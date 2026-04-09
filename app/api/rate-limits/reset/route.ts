@@ -3,6 +3,8 @@ import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin/admin";
 import { verifyAuthToken } from "@/lib/firebase-admin/verify-token";
 import { isValidNetworkId } from "@/lib/constants";
+import { clearQuota } from "@/lib/rate-limit/userLimiter";
+import { USER_QUOTA_CONFIGS } from "@/lib/rate-limit/userLimiterConfig";
 
 // Startup check
 if (process.env.NODE_ENV === "production" && !process.env.INTERNAL_SYNC_SECRET) {
@@ -69,11 +71,15 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
-    const { networkId, userId: bodyUserId } = body as {
+    const { networkId, userId: bodyUserId, scope } = body as {
       networkId?: string;
       userId?: string;
+      scope?: 'outbound' | 'user-quota' | 'both';
       [key: string]: unknown;
     };
+
+    // Default to 'both' to preserve existing behaviour when scope is omitted
+    const resetScope = scope === 'outbound' || scope === 'user-quota' ? scope : 'both';
 
     if ("circuitBreaker" in body || "resetCircuitBreaker" in body) {
       return NextResponse.json(
@@ -86,14 +92,28 @@ export async function POST(request: Request) {
       ? (typeof bodyUserId === "string" && bodyUserId ? bodyUserId : null)
       : uid!;
 
-    let query = adminDb.collection("rateLimitLogs").limit(500) as FirebaseFirestore.Query;
-    if (targetUid) query = query.where("uid", "==", targetUid);
-    if (networkId && isValidNetworkId(networkId)) query = query.where("networkId", "==", networkId);
+    // Clear in-memory user-quota counters when scope includes 'user-quota'
+    if (resetScope === 'user-quota' || resetScope === 'both') {
+      const uidToClear = targetUid ?? uid;
+      if (uidToClear) {
+        for (const cfg of USER_QUOTA_CONFIGS) {
+          clearQuota(uidToClear, cfg.endpoint);
+        }
+      }
+    }
 
-    const snapshot = await query.get();
-    const batch = adminDb.batch();
-    for (const doc of snapshot.docs) batch.delete(doc.ref);
-    await batch.commit();
+    // Clear Firestore outbound rate-limit logs when scope includes 'outbound'
+    let snapshot: FirebaseFirestore.QuerySnapshot | null = null;
+    if (resetScope === 'outbound' || resetScope === 'both') {
+      let query = adminDb.collection("rateLimitLogs").limit(500) as FirebaseFirestore.Query;
+      if (targetUid) query = query.where("uid", "==", targetUid);
+      if (networkId && isValidNetworkId(networkId)) query = query.where("networkId", "==", networkId);
+
+      snapshot = await query.get();
+      const batch = adminDb.batch();
+      for (const doc of snapshot.docs) batch.delete(doc.ref);
+      await batch.commit();
+    }
 
     // Audit log — failure must not fail the request
     let auditLogWarning: string | undefined;
@@ -103,7 +123,7 @@ export async function POST(request: Request) {
           userId: uid,
           action: "rate_limit_reset",
           networkId: networkId ?? null,
-          details: { cleared: snapshot.size },
+          details: { cleared: snapshot?.size ?? 0, scope: resetScope },
           createdAt: FieldValue.serverTimestamp(),
         });
       } catch (auditErr) {
@@ -114,7 +134,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({
       success: true,
-      cleared: snapshot.size,
+      cleared: snapshot?.size ?? 0,
       ...(auditLogWarning ? { auditLogWarning } : {}),
     });
   } catch (error) {
