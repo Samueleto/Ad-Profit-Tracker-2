@@ -85,6 +85,42 @@ export async function GET(request: Request) {
     });
 
     const roi = computeRoi(totalRevenue, totalCost);
+
+    // Compute prior-period ROI for roiChange (same window length, ending day before dateFrom)
+    let roiChange: number | null = null;
+    let roiChangeDirection: 'up' | 'down' | 'flat' | null = null;
+    try {
+      const diffMs = new Date(dateTo).getTime() - new Date(dateFrom).getTime();
+      const diffDays = Math.round(diffMs / 86400000);
+      const priorTo = new Date(new Date(dateFrom).getTime() - 86400000).toISOString().slice(0, 10);
+      const priorFrom = new Date(new Date(dateFrom).getTime() - 86400000 - diffMs).toISOString().slice(0, 10);
+
+      let priorQuery = adminDb
+        .collection("adStats")
+        .where("uid", "==", uid)
+        .where("date", ">=", priorFrom)
+        .where("date", "<=", priorTo) as FirebaseFirestore.Query;
+      if (networkId && isValidNetworkId(networkId)) {
+        priorQuery = priorQuery.where("networkId", "==", networkId);
+      }
+      const priorSnap = await priorQuery.get();
+      let priorRevenue = 0;
+      let priorCost = 0;
+      priorSnap.forEach(doc => {
+        const d = doc.data();
+        priorRevenue += Number(d.revenue) || 0;
+        priorCost += Number(d.cost) || 0;
+      });
+      const priorRoi = computeRoi(priorRevenue, priorCost);
+      if (roi !== null && priorRoi !== null) {
+        roiChange = roi - priorRoi;
+        roiChangeDirection = roiChange > 0.5 ? 'up' : roiChange < -0.5 ? 'down' : 'flat';
+      }
+      void diffDays; // consumed above
+    } catch {
+      // Prior period fetch is best-effort; don't fail the main request
+    }
+
     const breakdown = Object.entries(grouped).map(([key, val]) => {
       const pointRoi = computeRoi(val.revenue, val.cost);
       return {
@@ -106,6 +142,8 @@ export async function GET(request: Request) {
       roi,
       colorCode: getColorCode(roi),
       roiIndicator: getRoiIndicator(roi),
+      roiChange,
+      roiChangeDirection,
       totalRevenue,
       totalCost,
       netProfit: totalRevenue - totalCost,
