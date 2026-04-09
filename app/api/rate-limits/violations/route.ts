@@ -11,13 +11,20 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const endpointFilter = searchParams.get("endpoint");
+    const networkIdFilter = searchParams.get("networkId");
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200);
 
     // userId == uid is always required — never return violations from other users
-    const snapshot = await adminDb
+    let query = adminDb
       .collection("auditLogs")
       .where("userId", "==", uid)
-      .where("action", "==", "rate_limit_exceeded")
+      .where("action", "==", "rate_limit_exceeded") as FirebaseFirestore.Query;
+
+    if (networkIdFilter) {
+      query = query.where("networkId", "==", networkIdFilter);
+    }
+
+    const snapshot = await query
       .orderBy("createdAt", "desc")
       .limit(limit)
       .get();
