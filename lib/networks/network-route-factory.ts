@@ -316,7 +316,20 @@ export function makeRawResponseHandler(networkId: NetworkId) {
         );
       }
 
-      return NextResponse.json(serializeDoc(rawDoc));
+      const docData = rawDoc.data()!;
+      // Expose the raw records array as `records` so hooks can read data?.records
+      const rawRecords = docData.data;
+      const records = Array.isArray(rawRecords)
+        ? rawRecords
+        : rawRecords !== undefined && rawRecords !== null
+          ? [rawRecords]
+          : [];
+
+      return NextResponse.json({
+        ...serializeDoc(rawDoc),
+        records,
+        fieldSchema: NETWORK_API_CONFIGS[networkId].fieldSchema,
+      });
     } catch (error) {
       console.error(`GET /api/networks/${networkId}/raw-response error:`, error);
       return NextResponse.json({ error: "Internal server error" }, { status: 500 });
