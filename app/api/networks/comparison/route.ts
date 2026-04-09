@@ -78,6 +78,7 @@ export async function GET(request: Request) {
       const averageCtr = stats.impressions > 0 ? (stats.clicks / stats.impressions) * 100 : 0;
       const averageCpm = stats.impressions > 0 ? (primaryMetric / stats.impressions) * 1000 : 0;
 
+      const networkStatus = configMap[networkId] ?? { lastSyncedAt: null, lastSyncStatus: 'never', circuitBreakerOpen: false };
       return {
         networkId,
         dataRole,
@@ -89,7 +90,11 @@ export async function GET(request: Request) {
         daysWithData: stats.daysWithData.size,
         metricShare,
         rank: 0, // Will be set after sorting
-        networkStatus: configMap[networkId] ?? { lastSyncedAt: null, lastSyncStatus: 'never', circuitBreakerOpen: false },
+        // Flatten status fields to top level so hooks can read them directly
+        lastSyncedAt: networkStatus.lastSyncedAt,
+        lastSyncStatus: networkStatus.lastSyncStatus,
+        circuitBreakerOpen: networkStatus.circuitBreakerOpen,
+        networkStatus,
       };
     });
 
