@@ -11,10 +11,17 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const limit = Math.min(parseInt(searchParams.get("limit") || "10"), 50);
+    const networkId = searchParams.get("networkId");
 
-    const snapshot = await adminDb
+    let query = adminDb
       .collection("reconciliationReports")
-      .where("uid", "==", uid)
+      .where("uid", "==", uid) as FirebaseFirestore.Query;
+
+    if (networkId) {
+      query = query.where("networkId", "==", networkId);
+    }
+
+    const snapshot = await query
       .orderBy("createdAt", "desc")
       .limit(limit)
       .get();
