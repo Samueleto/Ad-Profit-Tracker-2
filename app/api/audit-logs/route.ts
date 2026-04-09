@@ -64,6 +64,7 @@ export async function GET(request: Request) {
     const action = searchParams.get("action");
     const startDate = searchParams.get("startDate");
     const endDate = searchParams.get("endDate");
+    const cursor = searchParams.get("cursor");
 
     let query = adminDb
       .collection("auditLogs")
@@ -73,7 +74,17 @@ export async function GET(request: Request) {
       query = query.where("networkId", "==", networkId);
     }
 
-    query = query.orderBy("createdAt", "desc").limit(limit + 1);
+    query = query.orderBy("createdAt", "desc");
+
+    // Cursor-based pagination: start after the cursor document
+    if (cursor) {
+      const cursorDoc = await adminDb.collection("auditLogs").doc(cursor).get();
+      if (cursorDoc.exists) {
+        query = query.startAfter(cursorDoc);
+      }
+    }
+
+    query = query.limit(limit + 1);
 
     const snapshot = await query.get();
 
