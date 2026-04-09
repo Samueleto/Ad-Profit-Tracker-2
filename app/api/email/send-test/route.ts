@@ -64,7 +64,7 @@ export async function POST(request: Request) {
       createdAt: FieldValue.serverTimestamp(),
     }).catch(err => console.error('audit log write failed:', err));
 
-    return NextResponse.json({ success: true, deliveryEmail });
+    return NextResponse.json({ success: true, deliveryEmail, sentAt: new Date().toISOString() });
   } catch (error) {
     console.error('POST /api/email/send-test error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

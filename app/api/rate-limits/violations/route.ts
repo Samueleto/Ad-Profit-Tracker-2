@@ -12,6 +12,7 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url);
     const endpointFilter = searchParams.get("endpoint");
     const networkIdFilter = searchParams.get("networkId");
+    const cursor = searchParams.get("cursor");
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200);
 
     // userId == uid is always required — never return violations from other users
@@ -24,12 +25,19 @@ export async function GET(request: Request) {
       query = query.where("networkId", "==", networkIdFilter);
     }
 
-    const snapshot = await query
-      .orderBy("createdAt", "desc")
-      .limit(limit)
-      .get();
+    let pagedQuery = query.orderBy("createdAt", "desc");
 
-    let violations = snapshot.docs.map(serializeDoc);
+    if (cursor) {
+      const cursorDoc = await adminDb.collection("auditLogs").doc(cursor).get();
+      if (cursorDoc.exists) {
+        pagedQuery = pagedQuery.startAfter(cursorDoc);
+      }
+    }
+
+    const snapshot = await pagedQuery.limit(limit + 1).get();
+    const hasMore = snapshot.docs.length > limit;
+    const pageDocs = hasMore ? snapshot.docs.slice(0, limit) : snapshot.docs;
+    let violations = pageDocs.map(serializeDoc);
 
     // Strict string equality check — cannot be bypassed by crafted values
     if (endpointFilter !== null) {
@@ -40,7 +48,11 @@ export async function GET(request: Request) {
       });
     }
 
-    return NextResponse.json({ violations, total: violations.length, hasMore: false, nextCursor: null });
+    const nextCursor = hasMore && violations.length > 0
+      ? (violations[violations.length - 1] as Record<string, unknown>)?.id as string ?? null
+      : null;
+
+    return NextResponse.json({ violations, total: violations.length, hasMore, nextCursor });
   } catch (error) {
     console.error("GET /api/rate-limits/violations error:", error);
     return NextResponse.json(
