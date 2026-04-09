@@ -96,7 +96,12 @@ export async function POST(request: Request) {
         createdAt: FieldValue.serverTimestamp(),
       }).catch((err: Error) => console.error("Audit log write failed:", err));
 
-      return NextResponse.json({ error: "Failed to fetch data from network API" }, { status: 502 });
+      return NextResponse.json({
+        error: "Failed to fetch data from network API",
+        triggered: [],
+        skipped: [],
+        failed: [networkId],
+      }, { status: 502 });
     }
 
     const statsArray = Array.isArray(rawData)
@@ -158,6 +163,10 @@ export async function POST(request: Request) {
       dateTo,
       rowsFetched: statsArray.length,
       recordsStored: storedCount,
+      // Shape expected by useBackfill BackfillResult
+      triggered: [networkId],
+      skipped: [],
+      failed: [],
     });
   } catch (error) {
     console.error("POST /api/stats/backfill error:", error);
