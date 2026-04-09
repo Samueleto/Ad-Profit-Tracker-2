@@ -19,7 +19,8 @@ export async function GET(request: Request) {
       const data = doc.data();
       return {
         id: doc.id,
-        networkId: data.networkId,
+        // doc.id is the networkId (rawResponses are stored as .doc(networkId))
+        networkId: (data.networkId as string) || doc.id,
         fetchedAt: data.fetchedAt?.toDate?.()?.toISOString() || null,
         dateFrom: data.dateFrom,
         dateTo: data.dateTo,
