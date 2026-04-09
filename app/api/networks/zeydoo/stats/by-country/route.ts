@@ -78,7 +78,9 @@ export async function GET(request: Request) {
       countryMap.set(country, existing);
     }
 
-    const results = Array.from(countryMap.values())
+    const allCountries = Array.from(countryMap.values());
+    const totalRevenue = allCountries.reduce((s, r) => s + r.revenue, 0);
+    const results = allCountries
       .sort((a, b) => b.revenue - a.revenue)
       .slice(0, limit);
 
@@ -88,6 +90,7 @@ export async function GET(request: Request) {
       dateTo: dateTo || null,
       limit,
       byCountry: results,
+      totalRevenue,
       total: results.length,
     });
   } catch (error) {
