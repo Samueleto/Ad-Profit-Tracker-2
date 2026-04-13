@@ -65,13 +65,17 @@ export async function POST(request: Request) {
     const testUrl = NETWORK_TEST_URLS[networkId];
 
     let connected = false;
+    let latencyMs = 0;
+    const startTs = Date.now();
     try {
       await axios.get(testUrl, {
         headers: { Authorization: `Bearer ${decryptedKey}` },
         timeout: 10000,
       });
+      latencyMs = Date.now() - startTs;
       connected = true;
     } catch {
+      latencyMs = Date.now() - startTs;
       connected = false;
     }
 
@@ -80,12 +84,12 @@ export async function POST(request: Request) {
       userId: uid,
       action: "connection_test",
       networkId,
-      details: { status: connected ? "connected" : "failed" },
+      details: { status: connected ? "connected" : "failed", latencyMs },
       createdAt: FieldValue.serverTimestamp(),
     }).catch((err: Error) => console.error("Audit log write failed:", err));
 
     if (connected) {
-      return NextResponse.json({ success: true, networkId, status: "connected" });
+      return NextResponse.json({ success: true, networkId, status: "connected", latencyMs, sampleRecordCount: 0 });
     }
     return NextResponse.json(
       { success: false, networkId, status: "failed", message: "Connection test failed — network API unreachable" },
