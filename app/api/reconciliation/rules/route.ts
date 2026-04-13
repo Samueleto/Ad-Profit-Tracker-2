@@ -33,6 +33,7 @@ export async function GET(request: Request) {
       networkId,
       rules: (storedThresholds[networkId] ?? {}) as Record<string, unknown>,
       isCustom: !!storedThresholds[networkId],
+      updatedAt: null,
     }));
 
     return NextResponse.json({ rules, networks });
