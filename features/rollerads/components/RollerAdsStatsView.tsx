@@ -18,7 +18,7 @@ export default function RollerAdsStatsView({ dateFrom, dateTo, onDateFromChange,
 
   const diffDays = Math.round((new Date(dateTo).getTime() - new Date(dateFrom).getTime()) / 86400000);
 
-  const { data, isLoading, error } = useRollerAdsStats(
+  const { data, isLoading, error, refetch } = useRollerAdsStats(
     rangeError ? '' : dateFrom,
     rangeError ? '' : dateTo,
     groupBy,
@@ -90,6 +90,7 @@ export default function RollerAdsStatsView({ dateFrom, dateTo, onDateFromChange,
       {error && !rangeError && (
         <div className="flex items-center gap-2 text-sm text-red-500">
           <AlertCircle className="w-4 h-4" /> Failed to load stats.
+          <button onClick={() => refetch()} className="text-xs underline">Retry</button>
         </div>
       )}
 

@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { getAuthHeaders } from '@/lib/auth/getAuthHeaders';
+import { useRouter } from 'next/navigation';
+import { getAuth } from 'firebase/auth';
+import { toast } from 'sonner';
 import type { NetworkId, NetworkStatus } from '../types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -29,6 +31,7 @@ const DEFAULT_STATUS_MAP: NetworkStatusMap = {
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useApiKeyStatus(): UseApiKeyStatusResult {
+  const router = useRouter();
   const [statusMap, setStatusMap] = useState<NetworkStatusMap>({ ...DEFAULT_STATUS_MAP });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -37,8 +40,16 @@ export function useApiKeyStatus(): UseApiKeyStatusResult {
   useEffect(() => {
     (async () => {
       try {
-        const headers = await getAuthHeaders();
-        const res = await fetch('/api/keys/status', { headers });
+        const auth = getAuth();
+        const doFetch = async (refresh: boolean) => {
+          const token = await auth.currentUser?.getIdToken(refresh);
+          return fetch('/api/keys/status', { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+        };
+        let res = await doFetch(false);
+        if (res.status === 401) {
+          res = await doFetch(true);
+          if (res.status === 401) { toast.error('Session expired. Please sign in again.'); router.replace('/'); return; }
+        }
         if (!res.ok) { setError('Failed to load API key status.'); return; }
         const data = await res.json();
         const statuses: NetworkStatus[] = data.statuses ?? data ?? [];
@@ -55,7 +66,7 @@ export function useApiKeyStatus(): UseApiKeyStatusResult {
         setLoading(false);
       }
     })();
-  }, []);
+  }, [router]);
 
   const markConnected = useCallback((networkId: NetworkId, updatedAt: string) => {
     setStatusMap(prev => ({

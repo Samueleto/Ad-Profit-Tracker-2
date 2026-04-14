@@ -2,7 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { RefreshCw, Loader2, AlertCircle } from 'lucide-react';
+import { RefreshCw, Loader2, AlertCircle, ShieldAlert } from 'lucide-react';
+import { toast } from 'sonner';
 import {
   DndContext,
   closestCenter,
@@ -19,7 +20,6 @@ import {
 import { CSS } from '@dnd-kit/utilities';
 import { useNetworkConfigs } from '../hooks/useNetworkConfigs';
 import NetworkCard from './NetworkCard';
-import { Toast } from '@/components/ui/Toast';
 import type { NetworkConfig } from '../types';
 
 const NETWORK_LABELS: Record<string, string> = {
@@ -79,36 +79,51 @@ export default function NetworkConfigTab() {
     networks,
     loading,
     error,
+    accessDenied,
     authExpired,
     syncAllLoading,
     syncAllResult,
+    reload,
     updateNetworkConfig,
     reorderNetworks,
     syncAll,
   } = useNetworkConfigs();
 
-  const [syncToast, setSyncToast] = useState<{ message: string; variant: 'success' | 'error' } | null>(null);
-  const [sessionToast, setSessionToast] = useState(false);
+  const [lastSyncResult, setLastSyncResult] = useState(syncAllResult);
 
   // Handle auth expiry
   useEffect(() => {
     if (authExpired) {
-      setSessionToast(true);
-      const t = setTimeout(() => router.push('/'), 1500);
-      return () => clearTimeout(t);
+      toast.error('Session expired. Please sign in again.');
+      router.push('/');
     }
   }, [authExpired, router]);
 
   // Show toast when syncAllResult changes
   useEffect(() => {
     if (!syncAllResult) return;
-    const msg = `Synced: ${syncAllResult.triggered} | Skipped: ${syncAllResult.skipped} | Failed: ${syncAllResult.failed}`;
-    setSyncToast({ message: msg, variant: syncAllResult.failed > 0 ? 'error' : 'success' });
+    setLastSyncResult(syncAllResult);
+    const { triggered, skipped, failed } = syncAllResult;
+    if (failed === 0 && triggered > 0) {
+      toast.success(`Sync complete — ${triggered} triggered, ${skipped} skipped.`);
+    } else if (failed > 0) {
+      // Partial results — show breakdown, not a full failure
+      toast.warning(`Sync partial — ${triggered} triggered, ${failed} failed, ${skipped} skipped.`);
+    }
   }, [syncAllResult]);
+
+  const handleSyncAll = async () => {
+    const result = await syncAll();
+    if (result.rateLimited) {
+      toast.warning('Sync limit reached — you can sync up to 3 times per hour.');
+    } else if (result.serverError) {
+      toast.error('Sync failed — please try again in a moment.');
+    }
+  };
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }));
 
-  const handleDragEnd = (event: DragEndEvent) => {
+  const handleDragEnd = async (event: DragEndEvent) => {
     const { active, over } = event;
     if (!over || active.id === over.id) return;
     const oldIndex = networks.findIndex(n => n.networkId === active.id);
@@ -117,14 +132,35 @@ export default function NetworkConfigTab() {
     const reordered = [...networks];
     const [moved] = reordered.splice(oldIndex, 1);
     reordered.splice(newIndex, 0, moved);
-    reorderNetworks(reordered);
+    try {
+      await reorderNetworks(reordered);
+    } catch {
+      toast.error("Couldn't save new order — please try again.");
+    }
   };
+
+  if (accessDenied) {
+    return (
+      <div className="flex items-center gap-2 px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl text-sm text-red-700 dark:text-red-400">
+        <ShieldAlert className="w-4 h-4 flex-shrink-0" />
+        Access Denied — you don&apos;t have permission to view network settings.
+      </div>
+    );
+  }
 
   if (error) {
     return (
-      <div className="flex items-center gap-3 px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
-        <AlertCircle className="w-4 h-4 text-red-500 flex-shrink-0" />
-        <span className="text-sm text-red-700 dark:text-red-400">{error}</span>
+      <div className="flex items-center justify-between px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
+        <span className="flex items-center gap-2 text-sm text-red-700 dark:text-red-400">
+          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+          {error}
+        </span>
+        <button
+          onClick={reload}
+          className="text-xs text-red-700 dark:text-red-400 underline hover:no-underline ml-3"
+        >
+          Retry
+        </button>
       </div>
     );
   }
@@ -134,7 +170,7 @@ export default function NetworkConfigTab() {
       {/* Sync All button */}
       <div className="flex justify-end">
         <button
-          onClick={syncAll}
+          onClick={handleSyncAll}
           disabled={syncAllLoading}
           className="flex items-center gap-1.5 px-3 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-700 text-white rounded-lg disabled:opacity-50 transition-colors"
         >
@@ -170,13 +206,6 @@ export default function NetworkConfigTab() {
             </div>
           </SortableContext>
         </DndContext>
-      )}
-
-      {syncToast && (
-        <Toast message={syncToast.message} variant={syncToast.variant} onClose={() => setSyncToast(null)} />
-      )}
-      {sessionToast && (
-        <Toast message="Session expired. Redirecting to login…" variant="error" onClose={() => setSessionToast(false)} />
       )}
     </div>
   );

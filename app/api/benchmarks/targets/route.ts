@@ -152,7 +152,7 @@ export async function PATCH(request: Request) {
     adminDb.collection('auditLogs').add({
       userId: uid,
       action: 'benchmark_settings_updated',
-      metadata: {
+      details: {
         changedMetrics,
         historicalWindowDays: newHistoricalWindowDays !== undefined
           ? { before: prevHistoricalWindowDays, after: newHistoricalWindowDays }
@@ -161,7 +161,29 @@ export async function PATCH(request: Request) {
       createdAt: FieldValue.serverTimestamp(),
     }).catch((err: Error) => console.error('Audit log write failed:', err));
 
-    return NextResponse.json({ success: true, updatedAt: new Date().toISOString() });
+    // Re-read updated doc and return same shape as GET so the hook can call buildFormTargets()
+    const updatedDoc = await adminDb.collection('benchmarks').doc(uid).get();
+    const updatedData = updatedDoc.exists ? updatedDoc.data() : null;
+    const historicalWindowDays = updatedData?.historicalWindowDays ?? 30;
+    const metricTargets = updatedData?.metricTargets ?? {};
+    const metricsResponse = Object.keys(SYSTEM_DEFAULTS).map(metric => {
+      const target = metricTargets[metric];
+      const customTarget = target?.customTarget ?? null;
+      const useDefault = target?.useDefault ?? true;
+      const effectiveTarget = !useDefault && customTarget != null ? customTarget : SYSTEM_DEFAULTS[metric];
+      return {
+        metric, customTarget, useDefault, effectiveTarget,
+        systemDefault: SYSTEM_DEFAULTS[metric],
+        unit: METRIC_UNITS[metric] ?? '',
+        isCustom: !useDefault && customTarget != null,
+        updatedAt: target?.updatedAt ?? null,
+      };
+    });
+    return NextResponse.json({
+      historicalWindowDays,
+      metricTargets: metricsResponse,
+      lastUpdatedAt: updatedData?.updatedAt ?? null,
+    });
   } catch (error) {
     console.error('benchmarks/targets PATCH error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

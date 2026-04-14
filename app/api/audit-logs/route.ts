@@ -62,49 +62,86 @@ export async function GET(request: Request) {
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200);
     const networkId = searchParams.get("networkId");
     const action = searchParams.get("action");
-    const startDate = searchParams.get("startDate");
-    const endDate = searchParams.get("endDate");
+    const status = searchParams.get("status"); // 'success' | 'failure'
+    const preset = searchParams.get("preset"); // '7d' | '30d' | '90d'
+    const cursor = searchParams.get("cursor");
+
+    // Resolve date range from explicit params or preset
+    let startDate = searchParams.get("startDate");
+    let endDate = searchParams.get("endDate");
+    if (!startDate && !endDate && preset) {
+      const days = preset === "7d" ? 7 : preset === "30d" ? 30 : preset === "90d" ? 90 : null;
+      if (days !== null) {
+        const now = new Date();
+        endDate = now.toISOString().slice(0, 10);
+        const from = new Date(now);
+        from.setDate(now.getDate() - days + 1);
+        startDate = from.toISOString().slice(0, 10);
+      }
+    }
 
     let query = adminDb
       .collection("auditLogs")
-      .where("userId", "==", uid)
-      .orderBy("createdAt", "desc")
-      .limit(limit) as FirebaseFirestore.Query;
+      .where("userId", "==", uid) as FirebaseFirestore.Query;
 
     if (networkId) {
-      query = adminDb
-        .collection("auditLogs")
-        .where("userId", "==", uid)
-        .where("networkId", "==", networkId)
-        .orderBy("createdAt", "desc")
-        .limit(limit);
+      query = query.where("networkId", "==", networkId);
     }
+
+    query = query.orderBy("createdAt", "desc");
+
+    // Cursor-based pagination: start after the cursor document
+    if (cursor) {
+      const cursorDoc = await adminDb.collection("auditLogs").doc(cursor).get();
+      if (cursorDoc.exists) {
+        query = query.startAfter(cursorDoc);
+      }
+    }
+
+    query = query.limit(limit + 1);
 
     const snapshot = await query.get();
 
-    let logs = snapshot.docs.map((doc) => {
+    const hasMore = snapshot.docs.length > limit;
+    const pageDocs = hasMore ? snapshot.docs.slice(0, limit) : snapshot.docs;
+
+    let logs = pageDocs.map((doc) => {
       const data = doc.data() as Record<string, unknown>;
       return {
         id: doc.id,
+        userId: data.userId ?? uid,
         action: data.action,
-        networkId: data.networkId,
-        details: data.details,
+        resourceType: data.resourceType ?? null,
+        resourceId: data.resourceId ?? null,
+        networkId: data.networkId ?? null,
+        metadata: data.details ?? data.metadata ?? null,
+        details: data.details ?? data.metadata ?? null,
+        ipAddress: data.ipAddress ?? null,
+        userAgent: data.userAgent ?? null,
+        status: data.status ?? null,
+        errorMessage: data.errorMessage ?? null,
         createdAt: (data.createdAt as { toDate?: () => Date })?.toDate?.()?.toISOString() || null,
       };
     });
 
-    // Strict in-memory filters — action uses exact equality to prevent bypass
+    // Support comma-separated action filter
     if (action) {
-      logs = logs.filter((log) => log.action === action);
+      const actions = action.split(",").map(s => s.trim()).filter(Boolean);
+      logs = logs.filter((log) => actions.includes(String(log.action)));
+    }
+    if (status) {
+      logs = logs.filter((log) => log.status === status);
     }
     if (startDate) {
-      logs = logs.filter((log) => log.createdAt && log.createdAt >= startDate);
+      logs = logs.filter((log) => log.createdAt && log.createdAt >= startDate!);
     }
     if (endDate) {
-      logs = logs.filter((log) => log.createdAt && log.createdAt <= endDate + "T23:59:59Z");
+      logs = logs.filter((log) => log.createdAt && log.createdAt <= endDate! + "T23:59:59Z");
     }
 
-    return NextResponse.json({ logs, total: logs.length });
+    const nextCursor = hasMore && pageDocs.length > 0 ? pageDocs[pageDocs.length - 1].id : null;
+
+    return NextResponse.json({ logs, total: logs.length, hasMore, nextCursor });
   } catch (error) {
     console.error("GET /api/audit-logs error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -150,7 +187,7 @@ export async function POST(request: Request) {
       userId: uid,
       action,
       networkId: networkId || null,
-      metadata: safeMetadata,
+      details: safeMetadata,
       ipAddress,
       userAgent,
       createdAt: FieldValue.serverTimestamp(),

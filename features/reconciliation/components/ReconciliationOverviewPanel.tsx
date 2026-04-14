@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
 import { AlertCircle, CheckCircle, Loader2, RefreshCw, AlertTriangle } from 'lucide-react';
+import { toast } from 'sonner';
 import { useRateLimitStatus } from '@/features/rate-limits/hooks';
 
 interface UserQuota { endpoint: string; remaining: number; resetAt: string | null; }
@@ -32,9 +34,9 @@ interface RunResult {
   durationMs?: number;
 }
 
-async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
+async function authFetch(path: string, init: RequestInit = {}, refresh = false): Promise<Response> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
+  const token = await auth.currentUser?.getIdToken(refresh);
   return fetch(path, {
     ...init,
     headers: {
@@ -58,6 +60,7 @@ const HEALTH_STYLES = {
 };
 
 export default function ReconciliationOverviewPanel({ onAnomaliesFound }: { onAnomaliesFound?: (count: number, networkId: string) => void }) {
+  const router = useRouter();
   const [status, setStatus] = useState<StatusResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -74,12 +77,20 @@ export default function ReconciliationOverviewPanel({ onAnomaliesFound }: { onAn
     setLoading(true);
     setError(false);
     try {
-      const res = await authFetch('/api/reconciliation/status');
+      let res = await authFetch('/api/reconciliation/status');
+      if (res.status === 401) {
+        res = await authFetch('/api/reconciliation/status', {}, true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (!res.ok) { setError(true); return; }
       setStatus(await res.json());
     } catch { setError(true); }
     finally { setLoading(false); }
-  }, []);
+  }, [router]);
 
   useEffect(() => { fetchStatus(); }, [fetchStatus]);
 
@@ -88,13 +99,19 @@ export default function ReconciliationOverviewPanel({ onAnomaliesFound }: { onAn
     if (diffDays > 90) { alert('Date range cannot exceed 90 days.'); return; }
     setRunning(networkId);
     setRunErrors(prev => ({ ...prev, [networkId]: '' }));
+    const body: Record<string, string> = { dateFrom, dateTo };
+    if (networkId !== 'all') body.networkId = networkId;
+    const runInit = { method: 'POST', body: JSON.stringify(body) };
     try {
-      const body: Record<string, string> = { dateFrom, dateTo };
-      if (networkId !== 'all') body.networkId = networkId;
-      const res = await authFetch('/api/reconciliation/run', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
+      let res = await authFetch('/api/reconciliation/run', runInit);
+      if (res.status === 401) {
+        res = await authFetch('/api/reconciliation/run', runInit, true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setRunErrors(prev => ({ ...prev, [networkId]: data.error ?? 'Run failed.' }));

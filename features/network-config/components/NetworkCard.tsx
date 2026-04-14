@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { AlertCircle, X } from 'lucide-react';
 import type { NetworkConfig, NetworkConfigUpdate } from '../types';
 import ConnectionStatusBadge from './ConnectionStatusBadge';
 import SyncScheduleSelector from './SyncScheduleSelector';
@@ -23,13 +24,19 @@ export default function NetworkCard({
 }: NetworkCardProps) {
   const [localConfig, setLocalConfig] = useState(config);
   const [saving, setSaving] = useState(false);
+  const [cardError, setCardError] = useState<string | null>(null);
 
   const handleUpdate = async (update: NetworkConfigUpdate) => {
-    const updated = { ...localConfig, ...update };
-    setLocalConfig(updated);
+    const prev = localConfig;
+    setLocalConfig({ ...localConfig, ...update });
+    setCardError(null);
     setSaving(true);
     try {
       await onUpdate(config.networkId, update);
+    } catch (err) {
+      // Revert optimistic update
+      setLocalConfig(prev);
+      setCardError(err instanceof Error ? err.message : `Failed to save ${networkName} settings.`);
     } finally {
       setSaving(false);
     }
@@ -94,8 +101,21 @@ export default function NetworkCard({
         onChange={update => handleUpdate(update)}
       />
 
-      {/* Error message */}
-      {localConfig.lastSyncError && connectionStatus === 'error' && (
+      {/* Inline card error banner (dismissible) */}
+      {cardError && (
+        <div className="mt-3 flex items-center justify-between gap-2 px-3 py-2 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+          <span className="flex items-center gap-1.5 text-xs text-red-700 dark:text-red-400">
+            <AlertCircle className="w-3.5 h-3.5 flex-shrink-0" />
+            {cardError}
+          </span>
+          <button onClick={() => setCardError(null)} className="text-red-400 hover:text-red-600 flex-shrink-0">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      )}
+
+      {/* Sync error message */}
+      {!cardError && localConfig.lastSyncError && connectionStatus === 'error' && (
         <p className="mt-2 text-xs text-red-500 truncate" title={localConfig.lastSyncError}>
           Error: {localConfig.lastSyncError}
         </p>

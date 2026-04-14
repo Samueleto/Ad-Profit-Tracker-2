@@ -2,14 +2,33 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams, usePathname } from 'next/navigation';
-import { getAuthHeaders } from '@/lib/auth/getAuthHeaders';
+import { getAuth } from 'firebase/auth';
+import { toast } from 'sonner';
 
 // ─── Shared fetch helper ──────────────────────────────────────────────────────
 
 async function authFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = await getAuthHeaders();
-  const res = await fetch(path, { ...init, headers: { ...headers, ...(init.headers as Record<string, string> ?? {}) } });
-  if (res.status === 401) { window.location.href = '/login'; throw new Error('Unauthorized'); }
+  const auth = getAuth();
+  const doRequest = async (forceRefresh: boolean) => {
+    const token = await auth.currentUser?.getIdToken(forceRefresh);
+    return fetch(path, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(init.headers as Record<string, string> ?? {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+  };
+  let res = await doRequest(false);
+  if (res.status === 401) {
+    res = await doRequest(true);
+    if (res.status === 401) {
+      toast.error('Session expired. Please sign in again.');
+      window.location.replace('/');
+      throw new Error('Session expired.');
+    }
+  }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
     throw new Error(data?.message ?? `Request failed: ${res.status}`);

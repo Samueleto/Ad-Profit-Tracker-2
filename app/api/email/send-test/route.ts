@@ -59,12 +59,12 @@ export async function POST(request: Request) {
       userId: uid,
       action: 'send_test_email',
       resourceType: 'email',
-      metadata: { deliveryEmail },
+      details: { deliveryEmail },
       status: 'queued',
       createdAt: FieldValue.serverTimestamp(),
     }).catch(err => console.error('audit log write failed:', err));
 
-    return NextResponse.json({ success: true, deliveryEmail });
+    return NextResponse.json({ success: true, deliveryEmail, sentAt: new Date().toISOString() });
   } catch (error) {
     console.error('POST /api/email/send-test error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

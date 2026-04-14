@@ -41,39 +41,23 @@ export async function GET(request: Request) {
 
     let query = adminDb
       .collection("adStats")
-      .where("uid", "==", uid)
-      .orderBy("date", "desc")
-      .limit(limit) as FirebaseFirestore.Query;
+      .where("uid", "==", uid) as FirebaseFirestore.Query;
 
     if (networkId) {
-      query = adminDb
-        .collection("adStats")
-        .where("uid", "==", uid)
-        .where("networkId", "==", networkId)
-        .orderBy("date", "desc")
-        .limit(limit);
+      query = query.where("networkId", "==", networkId);
     }
-
     if (dateFrom) {
-      query = adminDb
-        .collection("adStats")
-        .where("uid", "==", uid)
-        .where("date", ">=", dateFrom)
-        .orderBy("date", "desc")
-        .limit(limit);
+      query = query.where("date", ">=", dateFrom);
     }
+    if (dateTo) {
+      query = query.where("date", "<=", dateTo);
+    }
+    query = query.orderBy("date", "desc").limit(limit);
 
     const snapshot = await query.get();
-    let stats = snapshot.docs.map(serializeDoc).filter(Boolean);
+    const stats = snapshot.docs.map(serializeDoc).filter(Boolean);
 
-    if (dateTo) {
-      stats = stats.filter((s) => {
-        const d = (s as Record<string, unknown>)?.date;
-        return typeof d === "string" && d <= dateTo;
-      });
-    }
-
-    return NextResponse.json({ stats, total: stats.length, networkId: networkId || null });
+    return NextResponse.json({ rows: stats, stats, total: stats.length, networkId: networkId || null });
   } catch (error) {
     console.error("GET /api/stats/trend error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

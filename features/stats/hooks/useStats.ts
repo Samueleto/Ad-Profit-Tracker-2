@@ -1,13 +1,33 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { getAuthHeaders } from '@/lib/auth/getAuthHeaders';
+import { getAuth } from 'firebase/auth';
+import { toast } from 'sonner';
 
 // ─── Shared fetch helper ──────────────────────────────────────────────────────
 
-async function apiFetch<T>(path: string): Promise<T> {
-  const headers = await getAuthHeaders();
-  const res = await fetch(path, { headers });
+async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const auth = getAuth();
+  const doRequest = async (forceRefresh: boolean) => {
+    const token = await auth.currentUser?.getIdToken(forceRefresh);
+    return fetch(path, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(init.headers as Record<string, string> ?? {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+  };
+  let res = await doRequest(false);
+  if (res.status === 401) {
+    res = await doRequest(true);
+    if (res.status === 401) {
+      toast.error('Session expired. Please sign in again.');
+      window.location.replace('/');
+      throw new Error('Session expired.');
+    }
+  }
   if (!res.ok) {
     const err = new Error(`Request failed: ${res.status}`);
     (err as Error & { status: number }).status = res.status;
@@ -171,14 +191,10 @@ export function useBackfill() {
     setLoading(true);
     setError(null);
     try {
-      const headers = await getAuthHeaders();
-      const res = await fetch('/api/stats/backfill', {
+      const result = await apiFetch<BackfillResult>('/api/stats/backfill', {
         method: 'POST',
-        headers,
         body: JSON.stringify({ dateFrom, dateTo, ...(networkId ? { networkId } : {}) }),
       });
-      if (!res.ok) throw new Error(`Backfill failed: ${res.status}`);
-      const result = await res.json();
       setData(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Backfill failed.');
@@ -206,12 +222,9 @@ export function useDeleteSnapshot() {
     setLoading(true);
     setError(null);
     try {
-      const headers = await getAuthHeaders();
       const params = new URLSearchParams({ date });
       if (networkId) params.set('networkId', networkId);
-      const res = await fetch(`/api/stats/snapshot?${params}`, { method: 'DELETE', headers });
-      if (!res.ok) throw new Error(`Delete failed: ${res.status}`);
-      const result = await res.json();
+      const result = await apiFetch<{ deletedCount: number }>(`/api/stats/snapshot?${params}`, { method: 'DELETE' });
       setDeletedCount(result.deletedCount ?? 0);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Delete failed.');

@@ -43,10 +43,11 @@ export async function GET(request: Request) {
     const data = userDoc.data()!;
     const preferences = data.preferences || DEFAULT_PREFERENCES;
 
-    return NextResponse.json({
+    const prefs = {
       ...preferences,
       updatedAt: preferences.updatedAt?.toDate?.()?.toISOString() || null,
-    });
+    };
+    return NextResponse.json({ preferences: prefs, ...prefs });
   } catch (error) {
     console.error("preferences GET error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -122,10 +123,11 @@ export async function PATCH(request: Request) {
     const data = updatedDoc.data()!;
     const prefs = data.preferences || DEFAULT_PREFERENCES;
 
-    return NextResponse.json({
+    const updatedPrefs = {
       ...prefs,
       updatedAt: prefs.updatedAt?.toDate?.()?.toISOString() || null,
-    });
+    };
+    return NextResponse.json({ preferences: updatedPrefs, ...updatedPrefs });
   } catch (error) {
     console.error("preferences PATCH error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

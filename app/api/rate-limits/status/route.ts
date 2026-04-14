@@ -37,9 +37,24 @@ export async function GET(request: Request) {
       };
     }
 
-    return NextResponse.json({ statuses });
+    // Build arrays expected by useRateLimits hook
+    const networks = Object.values(statuses);
+    const userQuotas = networks.map((s) => ({
+      ...(s as Record<string, unknown>),
+      endpoint: `/api/networks/${(s as Record<string, unknown>).networkId}/sync`,
+    }));
+
+    return NextResponse.json({
+      networks,
+      userQuotas,
+      statuses,
+      polledAt: new Date().toISOString(),
+    });
   } catch (error) {
     console.error("GET /api/rate-limits/status error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { code: "FIRESTORE_READ_FAILURE", message: "Rate limit service temporarily unavailable. Please try again." },
+      { status: 500 }
+    );
   }
 }

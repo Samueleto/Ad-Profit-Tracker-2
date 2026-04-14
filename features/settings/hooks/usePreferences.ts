@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback, useEffect } from 'react';
+import { toast } from 'sonner';
 import { getAuth } from 'firebase/auth';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -33,9 +34,7 @@ export interface UsePreferencesResult {
   isDefaults: boolean;
   saveStatus: SaveStatus;
   fieldErrors: Record<string, string>;
-  toastMsg: string | null;
   isRateLimited: boolean;
-  dismissToast: () => void;
   updatePreference: <K extends keyof Preferences>(field: K, value: Preferences[K]) => void;
   saveAll: () => Promise<void>;
   fetchPreferences: () => Promise<void>;
@@ -54,7 +53,6 @@ export function usePreferences(
   const [isDefaults, setIsDefaults] = useState(initialIsDefaults);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [toastMsg, setToastMsg] = useState<string | null>(null);
   const [isRateLimited, setIsRateLimited] = useState(false);
 
   const savingRef = useRef(false);
@@ -73,7 +71,7 @@ export function usePreferences(
   }, []);
 
   const handleSessionExpiry = useCallback(() => {
-    setToastMsg('Session expired. Please sign in again.');
+    toast.error('Session expired. Please sign in again.');
     setTimeout(() => window.location.replace('/'), 1500);
   }, []);
 
@@ -151,13 +149,13 @@ export function usePreferences(
       }
       setFieldErrors(prev => ({ ...prev, ...errors }));
     } else if (res.status === 429) {
-      setToastMsg('Too many changes — please wait a moment');
+      toast.warning('Too many changes — please wait a moment');
       setRL(true);
       if (rateLimitTimerRef.current) clearTimeout(rateLimitTimerRef.current);
       rateLimitTimerRef.current = setTimeout(() => setRL(false), 5000);
     } else {
       // 500 or network error on PATCH — toast, keep user input intact
-      setToastMsg('Failed to save preferences. Please try again.');
+      toast.error('Failed to save preferences. Please try again.');
     }
   }, [setRL]);
 
@@ -169,7 +167,7 @@ export function usePreferences(
       const res = await patch(pending);
       if (!res.ok) await handlePatchError(res);
     } catch {
-      setToastMsg('Failed to save preferences. Please try again.');
+      toast.error('Failed to save preferences. Please try again.');
     }
   }, [patch, handlePatchError]);
 
@@ -202,7 +200,7 @@ export function usePreferences(
           const res = await patch(partial);
           if (!res.ok) await handlePatchError(res);
         } catch {
-          setToastMsg('Failed to save preferences. Please try again.');
+          toast.error('Failed to save preferences. Please try again.');
         }
       }, 400);
       return;
@@ -219,7 +217,7 @@ export function usePreferences(
         const res = await patch(partial);
         if (!res.ok) await handlePatchError(res);
       } catch {
-        setToastMsg('Failed to save preferences. Please try again.');
+        toast.error('Failed to save preferences. Please try again.');
       }
     })();
   }, [patch, handlePatchError]);
@@ -242,7 +240,7 @@ export function usePreferences(
       }
     } catch {
       setSaveStatus('idle');
-      setToastMsg('Failed to save preferences. Please try again.');
+      toast.error('Failed to save preferences. Please try again.');
     } finally {
       savingRef.current = false;
       await flushPending();
@@ -255,9 +253,7 @@ export function usePreferences(
     isDefaults,
     saveStatus,
     fieldErrors,
-    toastMsg,
     isRateLimited,
-    dismissToast: useCallback(() => setToastMsg(null), []),
     updatePreference,
     saveAll,
     fetchPreferences,

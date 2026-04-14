@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { getAuth } from 'firebase/auth';
+import { toast } from 'sonner';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -35,11 +36,28 @@ export interface SyncHistoryEntry {
 
 // ─── Shared auth helper ───────────────────────────────────────────────────────
 
-async function getHeaders(): Promise<Record<string, string>> {
-  const token = await getAuth().currentUser?.getIdToken();
+async function getHeaders(forceRefresh = false): Promise<Record<string, string>> {
+  const token = await getAuth().currentUser?.getIdToken(forceRefresh);
   const h: Record<string, string> = { 'Content-Type': 'application/json' };
   if (token) h.Authorization = `Bearer ${token}`;
   return h;
+}
+
+async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
+  const doRequest = async (forceRefresh: boolean) => {
+    const headers = await getHeaders(forceRefresh);
+    return fetch(path, { ...init, headers: { ...headers, ...(init.headers as Record<string, string> ?? {}) } });
+  };
+  let res = await doRequest(false);
+  if (res.status === 401) {
+    res = await doRequest(true);
+    if (res.status === 401) {
+      toast.error('Session expired. Please sign in again.');
+      window.location.replace('/');
+      throw new Error('Session expired.');
+    }
+  }
+  return res;
 }
 
 const POLL_INTERVAL_MS = 30_000;
@@ -64,10 +82,8 @@ export function useSyncStatus(): UseSyncStatusResult {
 
   const doFetch = useCallback(async () => {
     try {
-      const headers = await getHeaders();
-      const res = await fetch('/api/scheduled/sync-status', { headers });
+      const res = await authFetch('/api/scheduled/sync-status');
       if (!mountedRef.current) return;
-      if (res.status === 401) { window.location.href = '/login'; return; }
       if (!res.ok) { setError(`Failed to load sync status (${res.status}).`); return; }
       const data: SyncStatusResponse = await res.json();
       setNetworks(data.networks ?? []);
@@ -124,12 +140,10 @@ export function useSyncHistory(networkId?: string, limit = 10): UseSyncHistoryRe
   const fetchPage = useCallback(async (currentCursor: string | null, append: boolean) => {
     setIsLoading(true);
     try {
-      const headers = await getHeaders();
       const params = new URLSearchParams({ limit: String(cappedLimit) });
       if (networkId) params.set('networkId', networkId);
       if (currentCursor) params.set('cursor', currentCursor);
-      const res = await fetch(`/api/scheduled/sync-history?${params}`, { headers });
-      if (res.status === 401) { window.location.href = '/login'; return; }
+      const res = await authFetch(`/api/scheduled/sync-history?${params}`);
       if (!res.ok) { setError(`Failed to load sync history (${res.status}).`); return; }
       const data = await res.json();
       const entries: SyncHistoryEntry[] = data.history ?? [];
@@ -195,13 +209,10 @@ export function useRetrySync(onSuccess?: () => void): UseRetrySyncResult {
     setIsRetrying(prev => new Set(prev).add(networkId));
     setRetryError(prev => { const n = { ...prev }; delete n[networkId]; return n; });
     try {
-      const headers = await getHeaders();
-      const res = await fetch('/api/scheduled/retry-failed', {
+      const res = await authFetch('/api/scheduled/retry-failed', {
         method: 'POST',
-        headers,
         body: JSON.stringify({ networkId }),
       });
-      if (res.status === 401) { window.location.href = '/login'; return; }
       if (res.status === 429) {
         setRetryError(prev => ({ ...prev, [networkId]: 'Rate limit reached — try again in an hour' }));
         return;

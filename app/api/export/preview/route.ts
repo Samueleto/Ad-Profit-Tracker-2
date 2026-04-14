@@ -24,7 +24,7 @@ export async function GET(request: Request) {
       return NextResponse.json(cached, { headers: { 'X-Cache': 'HIT' } });
     }
 
-    let statsQuery = adminDb.collection('adStats').where('userId', '==', uid) as FirebaseFirestore.Query;
+    let statsQuery = adminDb.collection('adStats').where('uid', '==', uid) as FirebaseFirestore.Query;
     if (dateFrom) statsQuery = statsQuery.where('date', '>=', dateFrom);
     if (dateTo) statsQuery = statsQuery.where('date', '<=', dateTo);
 

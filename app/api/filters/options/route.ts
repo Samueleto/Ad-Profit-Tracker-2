@@ -65,8 +65,8 @@ export async function GET(request: Request) {
     });
 
     const countries = Array.from(countriesSet).sort().map(c => ({
-      country: c,
-      countryName: c,
+      code: c,
+      name: c,
       hasData: true,
     }));
 

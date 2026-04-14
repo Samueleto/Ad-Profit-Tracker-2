@@ -102,7 +102,7 @@ export async function POST(request: Request) {
       userId,
       action: 'send_summary_email',
       resourceType: 'email',
-      metadata: { summaryType, deliveryEmail },
+      details: { summaryType, deliveryEmail },
       status: 'queued',
       createdAt: FieldValue.serverTimestamp(),
     }).catch(err => console.error('audit log write failed:', err));

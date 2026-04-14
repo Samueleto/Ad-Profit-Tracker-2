@@ -82,7 +82,7 @@ export default function ZeydooNetworkTab() {
 
       {activeTab === 'explorer' && (
         <Section title="Zeydoo — API Explorer">
-          <ZeydooRawExplorer />
+          <ZeydooRawExplorer onGoToSync={() => setActiveTab('sync')} />
         </Section>
       )}
     </div>

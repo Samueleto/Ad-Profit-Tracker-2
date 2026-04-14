@@ -18,7 +18,10 @@ export async function GET(request: Request) {
       .get();
 
     if (snapshot.empty) {
-      return NextResponse.json({ error: "No stats available" }, { status: 404 });
+      return NextResponse.json(
+        { error: "no_data", message: "No Propush data found. Run a sync to get started." },
+        { status: 404 }
+      );
     }
 
     const latest = serializeDoc(snapshot.docs[0]);

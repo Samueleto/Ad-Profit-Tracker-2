@@ -19,7 +19,7 @@ export async function GET(request: Request) {
     // Query adStats for all networks
     let statsQuery = adminDb
       .collection('adStats')
-      .where('userId', '==', uid) as FirebaseFirestore.Query;
+      .where('uid', '==', uid) as FirebaseFirestore.Query;
     if (dateFrom) statsQuery = statsQuery.where('date', '>=', dateFrom);
     if (dateTo) statsQuery = statsQuery.where('date', '<=', dateTo);
 
@@ -48,8 +48,9 @@ export async function GET(request: Request) {
 
     // Get network configs for status
     const configsSnapshot = await adminDb
+      .collection('users')
+      .doc(uid)
       .collection('networkConfigs')
-      .where('userId', '==', uid)
       .get();
 
     const configMap: Record<string, { lastSyncedAt: string | null; lastSyncStatus: string; circuitBreakerOpen: boolean }> = {};
@@ -77,6 +78,7 @@ export async function GET(request: Request) {
       const averageCtr = stats.impressions > 0 ? (stats.clicks / stats.impressions) * 100 : 0;
       const averageCpm = stats.impressions > 0 ? (primaryMetric / stats.impressions) * 1000 : 0;
 
+      const networkStatus = configMap[networkId] ?? { lastSyncedAt: null, lastSyncStatus: 'never', circuitBreakerOpen: false };
       return {
         networkId,
         dataRole,
@@ -88,7 +90,11 @@ export async function GET(request: Request) {
         daysWithData: stats.daysWithData.size,
         metricShare,
         rank: 0, // Will be set after sorting
-        networkStatus: configMap[networkId] ?? { lastSyncedAt: null, lastSyncStatus: 'never', circuitBreakerOpen: false },
+        // Flatten status fields to top level so hooks can read them directly
+        lastSyncedAt: networkStatus.lastSyncedAt,
+        lastSyncStatus: networkStatus.lastSyncStatus,
+        circuitBreakerOpen: networkStatus.circuitBreakerOpen,
+        networkStatus,
       };
     });
 

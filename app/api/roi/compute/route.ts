@@ -51,10 +51,10 @@ export async function GET(request: Request) {
   }
 
   try {
-    // userId filter always comes from the verified token — never from params
+    // uid filter always comes from the verified token — never from params
     let statsQuery = adminDb
       .collection("adStats")
-      .where("userId", "==", uid)
+      .where("uid", "==", uid)
       .where("date", ">=", dateFrom)
       .where("date", "<=", dateTo) as FirebaseFirestore.Query;
 
@@ -85,6 +85,55 @@ export async function GET(request: Request) {
     });
 
     const roi = computeRoi(totalRevenue, totalCost);
+
+    // Compute prior-period ROI for roiChange (same window length, ending day before dateFrom)
+    let roiChange: number | null = null;
+    let roiChangeDirection: 'up' | 'down' | 'flat' | null = null;
+    try {
+      const diffMs = new Date(dateTo).getTime() - new Date(dateFrom).getTime();
+      const diffDays = Math.round(diffMs / 86400000);
+      const priorTo = new Date(new Date(dateFrom).getTime() - 86400000).toISOString().slice(0, 10);
+      const priorFrom = new Date(new Date(dateFrom).getTime() - 86400000 - diffMs).toISOString().slice(0, 10);
+
+      let priorQuery = adminDb
+        .collection("adStats")
+        .where("uid", "==", uid)
+        .where("date", ">=", priorFrom)
+        .where("date", "<=", priorTo) as FirebaseFirestore.Query;
+      if (networkId && isValidNetworkId(networkId)) {
+        priorQuery = priorQuery.where("networkId", "==", networkId);
+      }
+      const priorSnap = await priorQuery.get();
+      let priorRevenue = 0;
+      let priorCost = 0;
+      priorSnap.forEach(doc => {
+        const d = doc.data();
+        priorRevenue += Number(d.revenue) || 0;
+        priorCost += Number(d.cost) || 0;
+      });
+      const priorRoi = computeRoi(priorRevenue, priorCost);
+      if (roi !== null && priorRoi !== null) {
+        roiChange = roi - priorRoi;
+        roiChangeDirection = roiChange > 0.5 ? 'up' : roiChange < -0.5 ? 'down' : 'flat';
+      }
+      void diffDays; // consumed above
+    } catch {
+      // Prior period fetch is best-effort; don't fail the main request
+    }
+
+    const breakdown = Object.entries(grouped).map(([key, val]) => {
+      const pointRoi = computeRoi(val.revenue, val.cost);
+      return {
+        group: key,
+        key,
+        date: key,
+        ...val,
+        netProfit: val.revenue - val.cost,
+        roi: pointRoi,
+        colorCode: getColorCode(pointRoi),
+        roiIndicator: getRoiIndicator(pointRoi),
+      };
+    });
     const result = {
       dateFrom,
       dateTo,
@@ -93,14 +142,13 @@ export async function GET(request: Request) {
       roi,
       colorCode: getColorCode(roi),
       roiIndicator: getRoiIndicator(roi),
+      roiChange,
+      roiChangeDirection,
       totalRevenue,
       totalCost,
       netProfit: totalRevenue - totalCost,
-      breakdown: Object.entries(grouped).map(([key, val]) => ({
-        group: key,
-        ...val,
-        roi: computeRoi(val.revenue, val.cost),
-      })),
+      breakdown,
+      series: breakdown,
       cachedAt: new Date().toISOString(),
     };
 
@@ -108,6 +156,6 @@ export async function GET(request: Request) {
     return NextResponse.json(result);
   } catch (error) {
     console.error("GET /api/roi/compute error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: "Failed to retrieve data. Please try again." }, { status: 500 });
   }
 }

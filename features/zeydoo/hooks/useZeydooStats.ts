@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
 import { getAuth } from 'firebase/auth';
+import { toast } from 'sonner';
 
 // ─── Error types ──────────────────────────────────────────────────────────────
 
@@ -17,12 +19,14 @@ interface FetchError extends Error {
 
 async function fetchWithToken(url: string): Promise<unknown> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
+  const doFetch = async (refresh: boolean) => {
+    const token = await auth.currentUser?.getIdToken(refresh);
+    return fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  };
   let res: Response;
   try {
-    res = await fetch(url, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
+    res = await doFetch(false);
+    if (res.status === 401) res = await doFetch(true);
   } catch {
     const err: FetchError = new Error('Network error');
     err.errorType = 'network';
@@ -42,12 +46,14 @@ async function fetchWithToken(url: string): Promise<unknown> {
 /** Fetcher that returns null on 404 instead of throwing */
 async function fetchNullOn404(url: string): Promise<unknown> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
+  const doFetch = async (refresh: boolean) => {
+    const token = await auth.currentUser?.getIdToken(refresh);
+    return fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  };
   let res: Response;
   try {
-    res = await fetch(url, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    });
+    res = await doFetch(false);
+    if (res.status === 401) res = await doFetch(true);
   } catch {
     const err: FetchError = new Error('Network error');
     err.errorType = 'network';
@@ -94,7 +100,7 @@ export function useZeydooTopCountries(dateFrom: string, dateTo: string, limit?: 
   const key = dateFrom && dateTo ? `/api/networks/zeydoo/stats/by-country?${params}` : null;
   const { data, error, isLoading } = useSWR(key, fetchWithToken, { keepPreviousData: true });
   return {
-    countries: (data as Record<string, unknown> & { countries?: unknown[] })?.countries ?? [],
+    countries: (data as Record<string, unknown> & { byCountry?: unknown[]; countries?: unknown[] })?.byCountry ?? (data as Record<string, unknown> & { countries?: unknown[] })?.countries ?? [],
     totalRevenue: (data as Record<string, unknown> & { totalRevenue?: number })?.totalRevenue ?? null,
     isLoading,
     error: error ?? null,
@@ -109,6 +115,7 @@ export function useZeydooStatsByCountry(dateFrom: string, dateTo: string, limit?
 // ─── useZeydooSync ────────────────────────────────────────────────────────────
 
 export function useZeydooSync() {
+  const router = useRouter();
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncResult, setLastSyncResult] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -118,18 +125,26 @@ export function useZeydooSync() {
   const triggerSync = useCallback(async (dateFrom?: string, dateTo?: string) => {
     setIsSyncing(true);
     setError(null);
-    try {
-      const token = await getAuth().currentUser?.getIdToken();
+    const body: Record<string, string> = {};
+    if (dateFrom) body.dateFrom = dateFrom;
+    if (dateTo) body.dateTo = dateTo;
+    const syncBody = JSON.stringify(body);
+    const doFetch = async (refresh: boolean) => {
+      const token = await getAuth().currentUser?.getIdToken(refresh);
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers.Authorization = `Bearer ${token}`;
-      const body: Record<string, string> = {};
-      if (dateFrom) body.dateFrom = dateFrom;
-      if (dateTo) body.dateTo = dateTo;
-      const res = await fetch('/api/networks/zeydoo/sync', {
-        method: 'POST',
-        headers,
-        body: JSON.stringify(body),
-      });
+      return fetch('/api/networks/zeydoo/sync', { method: 'POST', headers, body: syncBody });
+    };
+    try {
+      let res = await doFetch(false);
+      if (res.status === 401) {
+        res = await doFetch(true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error(data?.message ?? `Sync failed: ${res.status}`);
@@ -137,14 +152,13 @@ export function useZeydooSync() {
       const result = await res.json();
       setLastSyncResult(result);
       setSyncVersion(v => v + 1);
-      // Also invalidate latest
       await mutate('/api/networks/zeydoo/stats/latest');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Sync failed.');
     } finally {
       setIsSyncing(false);
     }
-  }, [mutate]);
+  }, [mutate, router]);
 
   return { triggerSync, isSyncing, lastSyncResult, error, syncVersion };
 }
@@ -152,6 +166,7 @@ export function useZeydooSync() {
 // ─── useZeydooRawResponse (lazy — does not fetch on mount) ────────────────────
 
 export function useZeydooRawResponse() {
+  const router = useRouter();
   const [data, setData] = useState<unknown>(null);
   const [schema, setSchema] = useState<unknown>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -164,14 +179,23 @@ export function useZeydooRawResponse() {
     abortRef.current = new AbortController();
     setIsLoading(true);
     setError(null);
-    try {
-      const token = await getAuth().currentUser?.getIdToken();
+    const url = `/api/networks/zeydoo/raw-response?date=${date}`;
+    const doFetch = async (refresh: boolean) => {
+      const token = await getAuth().currentUser?.getIdToken(refresh);
       const headers: Record<string, string> = {};
       if (token) headers.Authorization = `Bearer ${token}`;
-      const res = await fetch(`/api/networks/zeydoo/raw-response?date=${date}`, {
-        headers,
-        signal: abortRef.current.signal,
-      });
+      return fetch(url, { headers, signal: abortRef.current!.signal });
+    };
+    try {
+      let res = await doFetch(false);
+      if (res.status === 401) {
+        res = await doFetch(true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (!res.ok) throw new Error(`Request failed: ${res.status}`);
       const json = await res.json();
       setData(json?.records ?? json);
@@ -182,7 +206,7 @@ export function useZeydooRawResponse() {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [router]);
 
   return { fetch: fetchData, data, schema, isLoading, error };
 }

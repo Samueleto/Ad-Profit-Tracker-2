@@ -11,7 +11,7 @@ import ComparisonBarChart from './ComparisonBarChart';
 import EfficiencyTable from './EfficiencyTable';
 import NetworkRankingStrip from './NetworkRankingStrip';
 import { useComparativeAnalysis } from '../hooks/useComparativeAnalysis';
-import { Toast } from '@/components/ui/Toast';
+import { toast } from 'sonner';
 
 const NETWORK_LABELS: Record<string, string> = {
   exoclick: 'ExoClick',
@@ -60,20 +60,17 @@ export default function ComparativeNetworkAnalysisTab({ onNetworkSelect }: Compa
   }, [fetchState]);
 
   useEffect(() => {
-    if (sessionExpired) router.replace('/');
+    if (sessionExpired) {
+      toast.error('Session expired. Please sign in again.');
+      router.replace('/');
+    }
   }, [sessionExpired, router]);
 
+  useEffect(() => {
+    if (syncFailed) toast.error('Sync failed. Please try again.');
+  }, [syncFailed]);
+
   return (
-    <>
-    {sessionExpired && <Toast message="Session expired. Please sign in again." variant="error" />}
-    {syncFailed && (
-      <Toast
-        message="Sync failed. Please try again."
-        variant="error"
-        durationMs={5000}
-        onClose={clearSyncFailed}
-      />
-    )}
     <div className="space-y-5">
       {/* Header row with MetricToggle + Sync All */}
       <div className="flex flex-wrap items-center gap-3 justify-between">
@@ -223,6 +220,5 @@ export default function ComparativeNetworkAnalysisTab({ onNetworkSelect }: Compa
         </>
       )}
     </div>
-    </>
   );
 }

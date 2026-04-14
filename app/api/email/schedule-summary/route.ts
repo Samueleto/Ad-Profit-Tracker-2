@@ -59,7 +59,7 @@ export async function POST(request: Request) {
     adminDb.collection('auditLogs').add({
       action: 'schedule_summary_email',
       resourceType: 'email',
-      metadata: { summaryType, scheduledFor },
+      details: { summaryType, scheduledFor },
       status: 'queued',
       createdAt: FieldValue.serverTimestamp(),
     }).catch(err => console.error('audit log write failed:', err));

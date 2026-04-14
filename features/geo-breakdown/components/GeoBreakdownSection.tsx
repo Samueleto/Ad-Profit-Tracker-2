@@ -14,7 +14,7 @@ import GeoTableSkeleton from './GeoTableSkeleton';
 import NetworkSubRow from './NetworkSubRow';
 import GeoCountryDrilldownModal from './GeoCountryDrilldownModal';
 import { useGeoBreakdown } from '../hooks/useGeoBreakdown';
-import { Toast } from '@/components/ui/Toast';
+import { toast } from 'sonner';
 import MobileDataTableWrapper from '@/components/layout/MobileDataTableWrapper';
 import type { ColumnConfig } from '@/components/layout/MobileDataTableWrapper';
 
@@ -44,6 +44,7 @@ export default function GeoBreakdownSection() {
 
   useEffect(() => {
     if (sessionExpired) {
+      toast.error('Session expired. Please sign in again.');
       router.replace('/');
     }
   }, [sessionExpired, router]);
@@ -123,8 +124,6 @@ export default function GeoBreakdownSection() {
   }
 
   return (
-    <>
-    {sessionExpired && <Toast message="Session expired. Please sign in again." />}
     <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl overflow-hidden">
       {/* Sticky header */}
       <div className="sticky top-0 z-10 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 py-3 flex flex-wrap items-center gap-3">
@@ -319,6 +318,5 @@ export default function GeoBreakdownSection() {
         />
       )}
     </div>
-    </>
   );
 }

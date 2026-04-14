@@ -22,7 +22,7 @@ export async function GET(request: Request) {
 
     let statsQuery = adminDb
       .collection('adStats')
-      .where('userId', '==', uid)
+      .where('uid', '==', uid)
       .where('networkId', '==', networkId) as FirebaseFirestore.Query;
 
     if (dateFrom) statsQuery = statsQuery.where('date', '>=', dateFrom);
@@ -92,15 +92,15 @@ export async function GET(request: Request) {
         metricShare: totalPrimaryMetric > 0 ? (stats.primaryMetric / totalPrimaryMetric) * 100 : 0,
       }));
 
-    // Get network status
+    // Get network status from user subcollection
     const configDoc = await adminDb
+      .collection('users')
+      .doc(uid)
       .collection('networkConfigs')
-      .where('userId', '==', uid)
-      .where('networkId', '==', networkId)
-      .limit(1)
+      .doc(networkId)
       .get();
 
-    const configData = configDoc.empty ? null : configDoc.docs[0].data();
+    const configData = configDoc.exists ? configDoc.data() : null;
 
     return NextResponse.json({
       networkId,

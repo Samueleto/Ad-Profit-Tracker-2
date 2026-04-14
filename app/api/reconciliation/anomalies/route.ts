@@ -16,6 +16,9 @@ export async function GET(request: Request) {
     const networkId = searchParams.get("networkId");
     const dateFrom = searchParams.get("dateFrom");
     const dateTo = searchParams.get("dateTo");
+    const severity = searchParams.get("severity");
+    const anomalyType = searchParams.get("anomalyType");
+    const cursor = searchParams.get("cursor");
     const limit = Math.min(parseInt(searchParams.get("limit") || "50"), 200);
 
     if (networkId && !isValidNetworkId(networkId)) {
@@ -42,20 +45,41 @@ export async function GET(request: Request) {
     if (dateFrom) {
       query = query.where("date", ">=", dateFrom);
     }
-
-    const snapshot = await query.orderBy("date", "desc").limit(limit).get();
-    let anomalies = snapshot.docs.map(serializeDoc).filter(Boolean);
-
     if (dateTo) {
-      anomalies = anomalies.filter((a) => {
-        const d = (a as Record<string, unknown>)?.date;
-        return typeof d === "string" && d <= dateTo;
-      });
+      query = query.where("date", "<=", dateTo);
     }
+
+    let pagedQuery = query.orderBy("date", "desc");
+
+    if (cursor) {
+      const cursorDoc = await adminDb.collection("adStats").doc(cursor).get();
+      if (cursorDoc.exists) {
+        pagedQuery = pagedQuery.startAfter(cursorDoc);
+      }
+    }
+
+    const snapshot = await pagedQuery.limit(limit + 1).get();
+    const hasMore = snapshot.docs.length > limit;
+    const pageDocs = hasMore ? snapshot.docs.slice(0, limit) : snapshot.docs;
+    let anomalies = pageDocs.map(serializeDoc).filter(Boolean);
+
+    if (severity) {
+      anomalies = anomalies.filter((a) => (a as Record<string, unknown>)?.severity === severity);
+    }
+
+    if (anomalyType) {
+      anomalies = anomalies.filter((a) => (a as Record<string, unknown>)?.anomalyType === anomalyType);
+    }
+
+    const nextCursor = hasMore && anomalies.length > 0
+      ? (anomalies[anomalies.length - 1] as Record<string, unknown>)?.id as string ?? null
+      : null;
 
     return NextResponse.json({
       anomalies,
       total: anomalies.length,
+      hasMore,
+      nextCursor,
       networkId: networkId || null,
     });
   } catch (error) {

@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { getAuthHeaders } from '@/lib/auth/getAuthHeaders';
+import { getAuth } from 'firebase/auth';
+import { toast } from 'sonner';
 import type {
   ReconciliationStatus,
   ReconciliationRunResult,
@@ -14,14 +15,26 @@ import type {
 // ─── Shared fetch helper ──────────────────────────────────────────────────────
 
 async function authFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = await getAuthHeaders();
-  const res = await fetch(path, {
-    ...init,
-    headers: { ...headers, ...(init.headers as Record<string, string> ?? {}) },
-  });
+  const auth = getAuth();
+  const doRequest = async (forceRefresh: boolean) => {
+    const token = await auth.currentUser?.getIdToken(forceRefresh);
+    return fetch(path, {
+      ...init,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(init.headers as Record<string, string> ?? {}),
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+  };
+  let res = await doRequest(false);
   if (res.status === 401) {
-    window.location.href = '/login';
-    throw new Error('Unauthorized');
+    res = await doRequest(true);
+    if (res.status === 401) {
+      toast.error('Session expired. Please sign in again.');
+      window.location.replace('/');
+      throw new Error('Session expired.');
+    }
   }
   if (!res.ok) {
     const data = await res.json().catch(() => ({}));
@@ -235,9 +248,11 @@ export function useValidationRules() {
 
   useEffect(() => {
     setLoading(true);
-    authFetch<{ rules?: RulesResponse[] } | RulesResponse[]>('/api/reconciliation/rules')
+    authFetch<{ networks?: RulesResponse[]; rules?: RulesResponse[] } | RulesResponse[]>('/api/reconciliation/rules')
       .then(d => {
-        const list = Array.isArray(d) ? d : (d as { rules?: RulesResponse[] }).rules ?? [];
+        // Route returns { networks: [...], rules: [...] }; networks has the per-network threshold format
+        const data = d as { networks?: RulesResponse[]; rules?: RulesResponse[] };
+        const list = Array.isArray(d) ? d : (data.networks ?? data.rules ?? []);
         setRulesByNetwork(list.map(r => ({
           networkId: r.networkId,
           rules: r.rules,

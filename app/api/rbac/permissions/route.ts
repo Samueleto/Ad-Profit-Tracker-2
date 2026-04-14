@@ -57,11 +57,27 @@ export async function GET(request: Request) {
 
     // Read workspace permission matrix from workspacePermissions collection
     const wpDoc = await adminDb.collection('workspacePermissions').doc(workspaceId).get();
-    const matrix = wpDoc.exists
+    const isCustomized = wpDoc.exists;
+    const matrix = isCustomized
       ? (wpDoc.data()?.permissions ?? SYSTEM_DEFAULTS)
       : SYSTEM_DEFAULTS;
 
-    return NextResponse.json({ workspaceId, permissions: matrix });
+    // Determine which roles have been customized from system defaults
+    const customizedRoles: string[] = isCustomized
+      ? EDITABLE_ROLES.filter((role) => {
+          const custom = (matrix as Record<string, unknown>)[role];
+          const def = (SYSTEM_DEFAULTS as Record<string, unknown>)[role];
+          return JSON.stringify(custom) !== JSON.stringify(def);
+        })
+      : [];
+
+    return NextResponse.json({
+      workspaceId,
+      permissions: matrix,
+      // Aliases expected by useRolePermissions hook
+      rolePermissions: matrix,
+      customizedRoles,
+    });
   } catch (error) {
     console.error('GET /api/rbac/permissions error:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
@@ -181,7 +197,7 @@ export async function PATCH(request: Request) {
       userId: uid,
       action: 'rbac_permissions_updated',
       resourceType: 'rbac',
-      metadata: { role, permissions, workspaceId },
+      details: { role, permissions, workspaceId },
       status: 'success',
       createdAt: FieldValue.serverTimestamp(),
     }).catch(err => console.error('audit log write failed:', err));

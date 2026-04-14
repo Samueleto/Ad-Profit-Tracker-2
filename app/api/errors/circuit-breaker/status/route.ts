@@ -16,20 +16,15 @@ export async function GET(request: Request) {
       return NextResponse.json({ error: "Invalid networkId" }, { status: 400 });
     }
 
-    let query = adminDb
-      .collection("networkConfigs")
-      .where("userId", "==", uid) as FirebaseFirestore.Query;
-
-    if (networkId) {
-      query = query.where("networkId", "==", networkId);
-    }
-
-    const snapshot = await query.get();
+    const baseRef = adminDb.collection("users").doc(uid).collection("networkConfigs");
+    const snapshot = networkId
+      ? await baseRef.doc(networkId).get().then(d => ({ docs: d.exists ? [d] : [] }))
+      : await baseRef.get();
 
     const statuses = snapshot.docs.map((doc) => {
-      const data = doc.data();
+      const data = doc.data()!;
       return {
-        networkId: data.networkId,
+        networkId: doc.id,
         circuitBreakerState: data.circuitBreakerState || "closed",
         failureCount: data.failureCount || 0,
         lastFailureAt: data.lastFailureAt?.toDate?.()?.toISOString() || null,
@@ -37,7 +32,13 @@ export async function GET(request: Request) {
       };
     });
 
-    return NextResponse.json({ statuses });
+    const summary = {
+      open: statuses.filter(s => s.circuitBreakerState === 'open').length,
+      halfOpen: statuses.filter(s => s.circuitBreakerState === 'half-open').length,
+      closed: statuses.filter(s => s.circuitBreakerState === 'closed').length,
+      total: statuses.length,
+    };
+    return NextResponse.json({ statuses, circuits: statuses, summary });
   } catch (error) {
     console.error("GET /api/errors/circuit-breaker/status error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

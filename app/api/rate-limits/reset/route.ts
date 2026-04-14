@@ -3,8 +3,10 @@ import { FieldValue } from "firebase-admin/firestore";
 import { adminDb } from "@/lib/firebase-admin/admin";
 import { verifyAuthToken } from "@/lib/firebase-admin/verify-token";
 import { isValidNetworkId } from "@/lib/constants";
+import { clearQuota } from "@/lib/rate-limit/userLimiter";
+import { USER_QUOTA_CONFIGS } from "@/lib/rate-limit/userLimiterConfig";
 
-// Startup check — loud warning if INTERNAL_SYNC_SECRET is missing in production
+// Startup check
 if (process.env.NODE_ENV === "production" && !process.env.INTERNAL_SYNC_SECRET) {
   console.error(
     "FATAL: INTERNAL_SYNC_SECRET is not set. " +
@@ -12,25 +14,26 @@ if (process.env.NODE_ENV === "production" && !process.env.INTERNAL_SYNC_SECRET) 
   );
 }
 
-// In-memory rate limit for user-authenticated resets: 10/hour per uid
+// In-memory rate limit: 10 resets/hour per uid
 const userResetRateLimit = new Map<string, { count: number; resetAt: number }>();
 const USER_RESET_MAX = 10;
-const USER_RESET_WINDOW_MS = 60 * 60 * 1000; // 1 hour
+const USER_RESET_WINDOW_MS = 60 * 60 * 1000;
 
-function checkUserResetLimit(uid: string): boolean {
+function checkUserResetLimit(uid: string): { allowed: boolean; retryAfterSeconds: number } {
   const now = Date.now();
   const entry = userResetRateLimit.get(uid);
   if (!entry || now >= entry.resetAt) {
     userResetRateLimit.set(uid, { count: 1, resetAt: now + USER_RESET_WINDOW_MS });
-    return true;
+    return { allowed: true, retryAfterSeconds: 0 };
   }
-  if (entry.count >= USER_RESET_MAX) return false;
+  if (entry.count >= USER_RESET_MAX) {
+    return { allowed: false, retryAfterSeconds: Math.ceil((entry.resetAt - now) / 1000) };
+  }
   entry.count++;
-  return true;
+  return { allowed: true, retryAfterSeconds: 0 };
 }
 
 export async function POST(request: Request) {
-  // --- Dual auth: Bearer token first, then x-internal-secret ---
   const authHeader = request.headers.get("authorization") || "";
   const internalSecret = process.env.INTERNAL_SYNC_SECRET;
 
@@ -38,27 +41,29 @@ export async function POST(request: Request) {
   let isInternalCall = false;
 
   if (authHeader.startsWith("Bearer ")) {
-    // User-facing call: verify Firebase ID token
     const authResult = await verifyAuthToken(request);
     if ("error" in authResult) return authResult.error;
     uid = authResult.token.uid;
   } else {
-    // Internal call: verify x-internal-secret
     if (!internalSecret) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ code: "UNAUTHENTICATED", message: "Unauthorized" }, { status: 401 });
     }
     const provided = request.headers.get("x-internal-secret");
     if (!provided || provided !== internalSecret) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+      return NextResponse.json({ code: "UNAUTHENTICATED", message: "Unauthorized" }, { status: 401 });
     }
     isInternalCall = true;
   }
 
-  // Rate limit user-authenticated calls (not internal)
   if (!isInternalCall && uid) {
-    if (!checkUserResetLimit(uid)) {
+    const { allowed, retryAfterSeconds } = checkUserResetLimit(uid);
+    if (!allowed) {
       return NextResponse.json(
-        { error: "Rate limit exceeded. Maximum 10 resets per hour." },
+        {
+          code: "RATE_LIMIT_EXCEEDED",
+          message: "Rate limit exceeded. Maximum 10 resets per hour.",
+          retryAfterSeconds,
+        },
         { status: 429 }
       );
     }
@@ -66,59 +71,77 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
-    const { networkId, userId: bodyUserId } = body as {
+    const { networkId, userId: bodyUserId, scope } = body as {
       networkId?: string;
       userId?: string;
+      scope?: 'outbound' | 'user-quota' | 'both';
       [key: string]: unknown;
     };
 
-    // Guard: never reset circuit breaker state — that belongs to /api/errors/circuit-breaker/reset
+    // Default to 'both' to preserve existing behaviour when scope is omitted
+    const resetScope = scope === 'outbound' || scope === 'user-quota' ? scope : 'both';
+
     if ("circuitBreaker" in body || "resetCircuitBreaker" in body) {
       return NextResponse.json(
-        { error: "Circuit breaker state cannot be reset from this endpoint" },
+        { code: "INVALID_REQUEST", message: "Circuit breaker state cannot be reset from this endpoint" },
         { status: 400 }
       );
     }
 
-    // For user calls: uid always comes from the verified token, ignore any userId in the body
-    // For internal calls: a userId may be provided in the body to scope the reset
     const targetUid = isInternalCall
       ? (typeof bodyUserId === "string" && bodyUserId ? bodyUserId : null)
       : uid!;
 
-    let query = adminDb
-      .collection("rateLimitLogs")
-      .limit(500) as FirebaseFirestore.Query;
-
-    if (targetUid) {
-      query = query.where("uid", "==", targetUid);
+    // Clear in-memory user-quota counters when scope includes 'user-quota'
+    if (resetScope === 'user-quota' || resetScope === 'both') {
+      const uidToClear = targetUid ?? uid;
+      if (uidToClear) {
+        for (const cfg of USER_QUOTA_CONFIGS) {
+          clearQuota(uidToClear, cfg.endpoint);
+        }
+      }
     }
 
-    if (networkId && isValidNetworkId(networkId)) {
-      query = query.where("networkId", "==", networkId);
+    // Clear Firestore outbound rate-limit logs when scope includes 'outbound'
+    let snapshot: FirebaseFirestore.QuerySnapshot | null = null;
+    if (resetScope === 'outbound' || resetScope === 'both') {
+      let query = adminDb.collection("rateLimitLogs").limit(500) as FirebaseFirestore.Query;
+      if (targetUid) query = query.where("uid", "==", targetUid);
+      if (networkId && isValidNetworkId(networkId)) query = query.where("networkId", "==", networkId);
+
+      snapshot = await query.get();
+      const batch = adminDb.batch();
+      for (const doc of snapshot.docs) batch.delete(doc.ref);
+      await batch.commit();
     }
 
-    const snapshot = await query.get();
-    const batch = adminDb.batch();
-    for (const doc of snapshot.docs) {
-      batch.delete(doc.ref);
-    }
-    await batch.commit();
-
-    // Audit log only for user-authenticated calls
+    // Audit log — failure must not fail the request
+    let auditLogWarning: string | undefined;
     if (!isInternalCall && uid) {
-      adminDb.collection("auditLogs").add({
-        userId: uid,
-        action: "rate_limit_reset",
-        networkId: networkId ?? null,
-        details: { cleared: snapshot.size },
-        createdAt: FieldValue.serverTimestamp(),
-      }).catch((err) => console.error("Audit log write failed:", err));
+      try {
+        await adminDb.collection("auditLogs").add({
+          userId: uid,
+          action: "rate_limit_reset",
+          networkId: networkId ?? null,
+          details: { cleared: snapshot?.size ?? 0, scope: resetScope },
+          createdAt: FieldValue.serverTimestamp(),
+        });
+      } catch (auditErr) {
+        console.error("Audit log write failed:", auditErr);
+        auditLogWarning = "Audit log write failed";
+      }
     }
 
-    return NextResponse.json({ success: true, cleared: snapshot.size });
+    return NextResponse.json({
+      success: true,
+      cleared: snapshot?.size ?? 0,
+      ...(auditLogWarning ? { auditLogWarning } : {}),
+    });
   } catch (error) {
     console.error("POST /api/rate-limits/reset error:", error);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json(
+      { code: "FIRESTORE_READ_FAILURE", message: "Rate limit service temporarily unavailable. Please try again." },
+      { status: 500 }
+    );
   }
 }

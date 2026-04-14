@@ -11,6 +11,8 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const networkId = searchParams.get("networkId");
+    const dateFrom = searchParams.get("dateFrom");
+    const dateTo = searchParams.get("dateTo");
 
     if (networkId && !isValidNetworkId(networkId)) {
       return NextResponse.json({ error: "Invalid networkId" }, { status: 400 });
@@ -20,19 +22,20 @@ export async function GET(request: Request) {
     let query = adminDb
       .collection("auditLogs")
       .where("userId", "==", uid)
-      .where("action", "in", ["sync_completed", "sync_failed"])
-      .orderBy("createdAt", "desc")
-      .limit(200) as FirebaseFirestore.Query;
+      .where("action", "in", ["sync_completed", "sync_failed"]) as FirebaseFirestore.Query;
 
     if (networkId) {
-      query = adminDb
-        .collection("auditLogs")
-        .where("userId", "==", uid)
-        .where("networkId", "==", networkId)
-        .where("action", "in", ["sync_completed", "sync_failed"])
-        .orderBy("createdAt", "desc")
-        .limit(200);
+      query = query.where("networkId", "==", networkId);
     }
+    if (dateFrom) {
+      query = query.where("createdAt", ">=", new Date(dateFrom));
+    }
+    if (dateTo) {
+      const end = new Date(dateTo);
+      end.setHours(23, 59, 59, 999);
+      query = query.where("createdAt", "<=", end);
+    }
+    query = query.orderBy("createdAt", "desc").limit(500);
 
     const snapshot = await query.get();
 
@@ -54,12 +57,27 @@ export async function GET(request: Request) {
       }
     }
 
+    const total = successCount + failureCount;
+    const overallSuccessRate = total > 0 ? successCount / total : 0;
+    const networks = Object.entries(networkBreakdown).map(([netId, { success, failure }]) => ({
+      networkId: netId,
+      successRate: (success + failure) > 0 ? success / (success + failure) : 0,
+      failureCount: failure,
+    }));
+    const mostProblematicNetwork = networks.length > 0
+      ? networks.reduce((a, b) => a.failureCount > b.failureCount ? a : b).networkId
+      : null;
+
     return NextResponse.json({
       networkId: networkId || null,
       successCount,
       failureCount,
-      total: successCount + failureCount,
+      total,
       networkBreakdown,
+      overallSuccessRate,
+      totalFailures: failureCount,
+      mostProblematicNetwork,
+      networks,
     });
   } catch (error) {
     console.error("GET /api/errors/summary error:", error);

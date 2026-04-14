@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { adminDb } from "@/lib/firebase-admin/admin";
+import { adminDb, adminCredentialsConfigured } from "@/lib/firebase-admin/admin";
 import type { HealthResponseOk, HealthResponseError } from "@/lib/deployment/types";
 
 const FIRESTORE_TIMEOUT_MS = 2000;
@@ -23,13 +23,14 @@ export async function GET() {
     const firestore: 'ok' | 'slow' = firestoreLatencyMs > 2000 ? 'slow' : 'ok';
     const status: 'healthy' | 'degraded' = firestore === 'slow' ? 'degraded' : 'healthy';
 
-    const body: HealthResponseOk = { status, firestore, firestoreLatencyMs, memoryMB, uptime, version };
+    const body: HealthResponseOk = { status, firestore, firestoreLatencyMs, memoryMB, uptime, version, credentialsConfigured: adminCredentialsConfigured };
     return NextResponse.json(body);
   } catch (error) {
     console.error("Health check failed:", error);
     const body: HealthResponseError = {
       status: "unhealthy",
       error: error instanceof Error ? error.message : "Health check failed",
+      credentialsConfigured: adminCredentialsConfigured,
     };
     return NextResponse.json(body, { status: 503 });
   }

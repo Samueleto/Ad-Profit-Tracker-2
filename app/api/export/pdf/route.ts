@@ -155,7 +155,7 @@ export async function POST(request: Request) {
         action: "pdf_export",
         resourceType: "export",
         resourceId: "pdf",
-        metadata: {
+        details: {
           dateFrom: from,
           dateTo: to,
           recordCount: snapshot.size,

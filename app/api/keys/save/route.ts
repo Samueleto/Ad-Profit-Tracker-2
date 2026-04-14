@@ -52,8 +52,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "key is required and cannot be empty" }, { status: 400 });
     }
 
-    // Encrypt server-side — raw key never logged or stored in plaintext
+    // Encrypt server-side — raw key is never logged or stored in plaintext
     const encryptedKey = encrypt(key.trim());
+    // Note: key and encryptedKey are intentionally excluded from all log statements
 
     const docRef = adminDb.collection("users").doc(uid).collection("apiKeys").doc(networkId);
     const existing = await docRef.get();
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ networkId, status: "connected" });
   } catch (error) {
-    console.error("keys/save error:", error);
+    console.error("[keys/save] Firestore error", { uid, ts: new Date().toISOString(), error });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

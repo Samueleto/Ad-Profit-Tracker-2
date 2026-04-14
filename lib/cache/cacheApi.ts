@@ -1,7 +1,22 @@
 // Step 297: Cache API service module
-// Wraps POST /api/cache/clear (invalidate), GET /api/cache/status, and POST /api/cache/warm
+// Wraps POST /api/cache/invalidate, GET /api/cache/status, and POST /api/cache/warm
 
 import { getAuth } from 'firebase/auth';
+
+// ─── Typed error ──────────────────────────────────────────────────────────────
+
+export class CacheApiError extends Error {
+  constructor(
+    public readonly status: number,
+    message: string,
+    public readonly retryAfterSeconds: number | null = null
+  ) {
+    super(message);
+    this.name = 'CacheApiError';
+  }
+}
+
+// ─── Auth fetch with 401 retry ────────────────────────────────────────────────
 
 async function getBearerToken(forceRefresh = false): Promise<string | null> {
   const auth = getAuth();
@@ -9,34 +24,27 @@ async function getBearerToken(forceRefresh = false): Promise<string | null> {
 }
 
 async function authedFetch(path: string, init: RequestInit = {}): Promise<Response> {
-  let token = await getBearerToken();
-  let res = await fetch(path, {
-    ...init,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(init.headers as Record<string, string> ?? {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
+  const makeHeaders = (token: string | null) => ({
+    'Content-Type': 'application/json',
+    ...(init.headers as Record<string, string> ?? {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
   });
-  // Retry once on 401 with a fresh token
+
+  let token = await getBearerToken();
+  let res = await fetch(path, { ...init, headers: makeHeaders(token) });
+
   if (res.status === 401) {
     token = await getBearerToken(true);
-    res = await fetch(path, {
-      ...init,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(init.headers as Record<string, string> ?? {}),
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-    });
+    res = await fetch(path, { ...init, headers: makeHeaders(token) });
   }
+
   return res;
 }
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
 export interface CacheInvalidateOptions {
-  /** 'all' clears everything, 'network' clears a specific network, 'endpoint' clears specific keys */
   scope: 'all' | 'network' | 'endpoint';
-  /** Optional keys (network IDs or endpoint identifiers) to clear for 'network'/'endpoint' scope */
   keys?: string[];
 }
 
@@ -53,43 +61,40 @@ export interface CacheStatusResponse {
   lastChecked: string;
 }
 
+// ─── API ──────────────────────────────────────────────────────────────────────
+
 export const cacheApi = {
-  /**
-   * GET /api/cache/status — returns current cache entries and metadata.
-   * Requires a valid Firebase user session.
-   */
   async getStatus(): Promise<CacheStatusResponse> {
     const res = await authedFetch('/api/cache/status');
-    if (!res.ok) throw Object.assign(new Error('Cache status fetch failed'), { status: res.status });
+    if (!res.ok) {
+      throw new CacheApiError(res.status, 'Cache status fetch failed');
+    }
     return res.json();
   },
 
-  /**
-   * POST /api/cache/clear — invalidates cache entries.
-   * scope 'all' clears all entries; 'network'/'endpoint' clear by keys[].
-   */
   async invalidate(options: CacheInvalidateOptions): Promise<{ success: boolean; cleared: number }> {
-    const body: Record<string, unknown> = {};
+    const body: Record<string, unknown> = { scope: options.scope };
     if (options.scope !== 'all' && options.keys?.length) {
-      // Use first key as networkId for 'network' scope
-      body.networkId = options.keys[0];
+      body.keys = options.keys;
     }
-    const res = await authedFetch('/api/cache/clear', {
+    const res = await authedFetch('/api/cache/invalidate', {
       method: 'POST',
       body: JSON.stringify(body),
     });
-    if (res.status === 429) {
-      throw Object.assign(new Error("You've invalidated the cache too many times this hour — try again later"), { status: 429 });
+
+    if (!res.ok) {
+      // Parse Retry-After header for 429
+      if (res.status === 429) {
+        const retryAfter = res.headers.get('Retry-After');
+        const retryAfterSeconds = retryAfter ? parseInt(retryAfter, 10) : null;
+        throw new CacheApiError(429, 'Rate limit exceeded', retryAfterSeconds);
+      }
+      throw new CacheApiError(res.status, 'Cache invalidation failed');
     }
-    if (!res.ok) throw Object.assign(new Error('Cache invalidation failed'), { status: res.status });
+
     return res.json();
   },
 
-  /**
-   * POST /api/cache/warm — warms cache entries (internal use only).
-   * Uses x-internal-secret header instead of user Bearer token.
-   * NOT called from user-facing UI.
-   */
   async warm(secret: string): Promise<void> {
     await fetch('/api/cache/warm', {
       method: 'POST',

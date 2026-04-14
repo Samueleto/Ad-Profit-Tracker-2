@@ -22,14 +22,14 @@ export async function POST(request: Request) {
       const snapshot = await adminDb
         .collection("notifications")
         .where("uid", "==", uid)
-        .where("read", "==", false)
+        .where("isRead", "==", false)
         .get();
       docsToUpdate = snapshot.docs;
     }
 
     const batch = adminDb.batch();
     for (const doc of docsToUpdate) {
-      batch.update(doc.ref, { read: true, readAt: FieldValue.serverTimestamp() });
+      batch.update(doc.ref, { isRead: true, readAt: FieldValue.serverTimestamp() });
     }
     await batch.commit();
 

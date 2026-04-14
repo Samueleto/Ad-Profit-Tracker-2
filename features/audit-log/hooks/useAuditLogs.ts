@@ -28,12 +28,21 @@ const DEFAULT_FILTERS: ActiveFilters = {
   status: null,
 };
 
+export type AuditLogErrorCode = 'UNAUTHORIZED' | 'FORBIDDEN' | 'SERVER_ERROR' | 'NETWORK_ERROR' | 'RATE_LIMITED' | 'NOT_FOUND';
+
+export interface AuditLogError {
+  code: AuditLogErrorCode;
+  message: string;
+}
+
 export interface UseAuditLogsResult {
   logs: AuditLog[];
   initialLoading: boolean;
   loadingMore: boolean;
   hasMore: boolean;
-  error: string | null;
+  error: AuditLogError | null;
+  accessDenied: boolean;
+  authExpired: boolean;
   activeFilters: ActiveFilters;
   setActionFilter: (actions: AuditAction[]) => void;
   setDateRange: (range: DateRangeFilter) => void;
@@ -46,8 +55,21 @@ export interface UseAuditLogsResult {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-async function getToken(): Promise<string | null> {
-  return (await getAuth().currentUser?.getIdToken()) ?? null;
+async function authFetch(path: string, init: RequestInit = {}): Promise<{ res: Response; sessionExpired: boolean }> {
+  const auth = getAuth();
+  const token = await auth.currentUser?.getIdToken() ?? null;
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    ...(init.headers as Record<string, string> ?? {}),
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
+  const res = await fetch(path, { ...init, headers });
+  if (res.status !== 401) return { res, sessionExpired: false };
+
+  const freshToken = await auth.currentUser?.getIdToken(true).catch(() => null) ?? null;
+  if (!freshToken) return { res, sessionExpired: true };
+  const retryRes = await fetch(path, { ...init, headers: { ...headers, Authorization: `Bearer ${freshToken}` } });
+  return { res: retryRes, sessionExpired: retryRes.status === 401 };
 }
 
 function buildQueryParams(filters: ActiveFilters, cursor?: string | null): string {
@@ -65,7 +87,9 @@ function buildQueryParams(filters: ActiveFilters, cursor?: string | null): strin
 function matchesSearch(log: AuditLog, searchText: string): boolean {
   if (!searchText.trim()) return true;
   const q = searchText.toLowerCase();
-  return JSON.stringify(log.metadata).toLowerCase().includes(q) ||
+  const anyLog = log as unknown as Record<string, unknown>;
+  const payload = anyLog.details ?? anyLog.metadata;
+  return JSON.stringify(payload ?? {}).toLowerCase().includes(q) ||
     log.action.toLowerCase().includes(q) ||
     log.resourceType?.toLowerCase().includes(q);
 }
@@ -77,7 +101,9 @@ export function useAuditLogs(): UseAuditLogsResult {
   const [initialLoading, setInitialLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<AuditLogError | null>(null);
+  const [accessDenied, setAccessDenied] = useState(false);
+  const [authExpired, setAuthExpired] = useState(false);
   const [activeFilters, setActiveFilters] = useState<ActiveFilters>(DEFAULT_FILTERS);
   const [cursor, setCursor] = useState<string | null>(null);
   const [loadMoreTrigger, setLoadMoreTrigger] = useState(0);
@@ -89,13 +115,19 @@ export function useAuditLogs(): UseAuditLogsResult {
     else setLoadingMore(true);
     setError(null);
     try {
-      const token = await getToken();
-      const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-      if (token) headers.Authorization = `Bearer ${token}`;
       const qs = buildQueryParams(filters, currentCursor);
-      const res = await fetch(`/api/audit/logs${qs ? `?${qs}` : ''}`, { headers });
-      if (fetchId !== fetchIdRef.current) return; // stale response
-      if (!res.ok) { setError('Failed to load audit logs.'); return; }
+      const { res, sessionExpired } = await authFetch(`/api/audit-logs${qs ? `?${qs}` : ''}`);
+      if (fetchId !== fetchIdRef.current) return;
+      if (sessionExpired) { setAuthExpired(true); return; }
+      if (res.status === 403) { setAccessDenied(true); return; }
+      if (res.status === 429) {
+        setError({ code: 'RATE_LIMITED', message: 'Too many requests — please wait a moment.' });
+        return;
+      }
+      if (!res.ok) {
+        setError({ code: 'SERVER_ERROR', message: 'Something went wrong loading your activity log.' });
+        return;
+      }
       const data = await res.json();
       const newLogs: AuditLog[] = data.logs ?? [];
       if (append) {
@@ -105,9 +137,15 @@ export function useAuditLogs(): UseAuditLogsResult {
       }
       setHasMore(data.hasMore ?? !!data.nextCursor);
       setCursor(data.nextCursor ?? null);
-    } catch (err) {
+    } catch {
       if (fetchId === fetchIdRef.current) {
-        setError(err instanceof Error ? err.message : 'Failed to load audit logs.');
+        const offline = typeof navigator !== 'undefined' && !navigator.onLine;
+        setError({
+          code: offline ? 'NETWORK_ERROR' : 'SERVER_ERROR',
+          message: offline
+            ? 'You appear to be offline. Check your connection and retry.'
+            : 'Something went wrong loading your activity log.',
+        });
       }
     } finally {
       if (fetchId === fetchIdRef.current) {
@@ -117,7 +155,6 @@ export function useAuditLogs(): UseAuditLogsResult {
     }
   }, []);
 
-  // Initial fetch + filter reset
   const filtersRef = useRef(activeFilters);
   filtersRef.current = activeFilters;
   useEffect(() => {
@@ -125,7 +162,6 @@ export function useAuditLogs(): UseAuditLogsResult {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeFilters, fetchLogs]);
 
-  // Load more
   const cursorRef = useRef(cursor);
   cursorRef.current = cursor;
   useEffect(() => {
@@ -160,10 +196,9 @@ export function useAuditLogs(): UseAuditLogsResult {
   }, [hasMore, loadingMore]);
 
   const refresh = useCallback(() => {
-    setActiveFilters(prev => ({ ...prev })); // trigger useEffect
+    setActiveFilters(prev => ({ ...prev }));
   }, []);
 
-  // Client-side search filtering
   const logs = activeFilters.searchText
     ? allLogs.filter(l => matchesSearch(l, activeFilters.searchText))
     : allLogs;
@@ -174,6 +209,8 @@ export function useAuditLogs(): UseAuditLogsResult {
     loadingMore,
     hasMore,
     error,
+    accessDenied,
+    authExpired,
     activeFilters,
     setActionFilter,
     setDateRange,

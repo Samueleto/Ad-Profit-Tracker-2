@@ -4,8 +4,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTheme } from 'next-themes';
 import { getAuth } from 'firebase/auth';
-import { Sun, Moon, Monitor, Check, Loader2, ShieldAlert } from 'lucide-react';
-import { Toast } from '@/components/ui/Toast';
+import { Sun, Moon, Monitor, Check, Loader2, ShieldAlert, AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -31,6 +31,7 @@ const DEFAULT_ACCENT = '#6366f1';
 
 // Fetches fresh token each call. Retries once with force-refresh on 401.
 // Returns { res, sessionExpired: true } if retry also returns 401.
+// Throws TypeError on network error (caller handles).
 async function authFetch(
   path: string,
   init: RequestInit = {}
@@ -109,8 +110,9 @@ export default function ThemeSettingsSection() {
   const router = useRouter();
   const { setTheme } = useTheme();
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [savedToast, setSavedToast] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [sessionExpired, setSessionExpired] = useState(false);
   const [accessDenied, setAccessDenied] = useState(false);
   const [notFound, setNotFound] = useState(false);
@@ -120,9 +122,12 @@ export default function ThemeSettingsSection() {
   const [customHex, setCustomHex] = useState('');
   const [customError, setCustomError] = useState('');
 
-  // Redirect on session expiry
+  // Redirect on session expiry with toast
   useEffect(() => {
-    if (sessionExpired) router.replace('/');
+    if (sessionExpired) {
+      toast.error('Session expired. Please sign in again.');
+      router.replace('/');
+    }
   }, [sessionExpired, router]);
 
   // Apply accent CSS custom property — only safe hex values reach here via sanitizeHex
@@ -136,14 +141,15 @@ export default function ThemeSettingsSection() {
     setTheme(themeMode);
   }, [themeMode, setTheme]);
 
-  // Load saved preferences
-  useEffect(() => {
+  const loadPreferences = useCallback(() => {
+    setLoading(true);
+    setLoadError(false);
     authFetch('/api/settings/preferences')
       .then(({ res, sessionExpired: expired }) => {
         if (expired) { setSessionExpired(true); return; }
         if (res.status === 403) { setAccessDenied(true); return; }
         if (res.status === 404) { setNotFound(true); return; }
-        if (!res.ok) return;
+        if (!res.ok) { setLoadError(true); return; }
         return res.json().then((data: Record<string, unknown>) => {
           if (data.themePreference && VALID_THEME_MODES.has(data.themePreference as string)) {
             setThemeMode(data.themePreference as ThemeMode);
@@ -153,16 +159,24 @@ export default function ThemeSettingsSection() {
           }
         });
       })
-      .catch(() => {})
+      .catch(() => {
+        toast.error('No internet connection. Check your network and try again.');
+        setLoadError(true);
+      })
       .finally(() => setLoading(false));
   }, []);
+
+  // Load saved preferences on mount
+  useEffect(() => { loadPreferences(); }, [loadPreferences]);
 
   const handleSave = useCallback(async () => {
     // Validate before sending — defense in depth (server also validates)
     if (!VALID_THEME_MODES.has(themeMode)) return;
     if (!isValidHex(accentColor)) return;
+    if (customError) return;
 
     setSaving(true);
+    setSaveError(null);
     try {
       const { res, sessionExpired: expired } = await authFetch('/api/settings/preferences', {
         method: 'PATCH',
@@ -171,13 +185,17 @@ export default function ThemeSettingsSection() {
       if (expired) { setSessionExpired(true); return; }
       if (res.status === 403) { setAccessDenied(true); return; }
       if (res.ok) {
-        setSavedToast(true);
-        setTimeout(() => setSavedToast(false), 3000);
+        toast.success('Appearance settings saved');
+      } else {
+        setSaveError('Failed to save. Please try again.');
       }
+    } catch {
+      toast.error('No internet connection. Check your network and try again.');
+      setSaveError('Failed to save. Please try again.');
     } finally {
       setSaving(false);
     }
-  }, [themeMode, accentColor]);
+  }, [themeMode, accentColor, customError]);
 
   const handleReset = useCallback(async () => {
     setThemeMode(DEFAULT_THEME);
@@ -198,7 +216,7 @@ export default function ThemeSettingsSection() {
       setCustomError('');
       setAccentColor(withHash);
     } else {
-      setCustomError('Enter a valid 3 or 6-digit hex color (e.g. #a3b4c5)');
+      setCustomError('Enter a valid hex color (e.g. #ff6600)');
       // Do NOT apply invalid value to CSS or state
     }
   }
@@ -211,15 +229,11 @@ export default function ThemeSettingsSection() {
     { id: 'system', label: 'System', icon: <Monitor className="w-4 h-4" /> },
   ];
 
-  if (sessionExpired) {
-    return <Toast message="Session expired. Please sign in again." variant="error" />;
-  }
-
   if (accessDenied) {
     return (
       <div className="flex items-center gap-2 text-sm text-red-500 p-4 bg-red-50 dark:bg-red-900/10 rounded-lg">
         <ShieldAlert className="w-4 h-4 flex-shrink-0" />
-        <span>Access Denied. You do not have permission to view these settings.</span>
+        <span>You don&apos;t have permission to view appearance settings.</span>
       </div>
     );
   }
@@ -231,10 +245,23 @@ export default function ThemeSettingsSection() {
         <p className="text-sm text-gray-500 dark:text-gray-400">Customize the look and feel of your dashboard.</p>
         {notFound && (
           <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-            Settings not found — saving will create them.
+            No saved settings found — your first save will create them.
           </p>
         )}
       </div>
+
+      {/* Load error banner */}
+      {loadError && (
+        <div className="flex items-center justify-between px-4 py-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-xl">
+          <span className="flex items-center gap-2 text-sm text-red-700 dark:text-red-400">
+            <AlertCircle className="w-4 h-4 flex-shrink-0" />
+            Failed to load appearance settings.
+          </span>
+          <button onClick={loadPreferences} className="text-xs text-red-700 dark:text-red-400 underline hover:no-underline ml-3">
+            Retry
+          </button>
+        </div>
+      )}
 
       {/* Theme mode */}
       <div className="space-y-2">
@@ -298,18 +325,20 @@ export default function ThemeSettingsSection() {
         )}
 
         {showCustom && !loading && (
-          <div className="flex items-center gap-2 mt-2">
-            <input
-              type="text"
-              value={customHex}
-              onChange={e => handleCustomHexChange(e.target.value)}
-              placeholder="#a3b4c5"
-              maxLength={7}
-              className="font-mono text-sm px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 w-32"
-            />
-            {customHex && !customError && (
-              <div className="w-6 h-6 rounded-full border border-gray-200" style={{ backgroundColor: accentColor }} />
-            )}
+          <div className="flex flex-col gap-1 mt-2">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={customHex}
+                onChange={e => handleCustomHexChange(e.target.value)}
+                placeholder="#a3b4c5"
+                maxLength={7}
+                className="font-mono text-sm px-3 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 w-32"
+              />
+              {customHex && !customError && (
+                <div className="w-6 h-6 rounded-full border border-gray-200" style={{ backgroundColor: accentColor }} />
+              )}
+            </div>
             {customError && <p className="text-xs text-red-500">{customError}</p>}
           </div>
         )}
@@ -318,36 +347,34 @@ export default function ThemeSettingsSection() {
       {/* Live preview */}
       <div className="space-y-2">
         <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Live Preview</label>
-        <div className="max-w-xs">
+        <div className="max-w-xs opacity-100 pointer-events-none">
           <LivePreview accent={accentColor} dark={isDark} />
         </div>
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-4 pt-2">
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
-        >
-          {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
-          Save Appearance
-        </button>
-        <button
-          onClick={handleReset}
-          disabled={saving}
-          className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline transition-colors"
-        >
-          Reset to Defaults
-        </button>
-      </div>
-
-      {/* Saved toast */}
-      {savedToast && (
-        <div className="fixed bottom-6 right-6 z-50 bg-green-600 text-white text-sm px-4 py-2 rounded-lg shadow-lg">
-          Saved
+      <div className="space-y-2">
+        <div className="flex items-center gap-4 pt-2">
+          <button
+            onClick={handleSave}
+            disabled={saving || loading || !!customError}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
+          >
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+            Save Appearance
+          </button>
+          <button
+            onClick={handleReset}
+            disabled={saving}
+            className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline transition-colors"
+          >
+            Reset to Defaults
+          </button>
         </div>
-      )}
+        {saveError && (
+          <p className="text-xs text-red-500">{saveError}</p>
+        )}
+      </div>
     </div>
   );
 }

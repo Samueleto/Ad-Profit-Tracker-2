@@ -39,7 +39,7 @@ export default function ExoClickCountryBreakdownView({ dateFrom, dateTo, onDateF
   const [sortKey, setSortKey] = useState<SortKey>('cost');
   const [sortAsc, setSortAsc] = useState(false);
 
-  const { countries, isLoading, error } = useExoClickStatsByCountry(dateFrom, dateTo, limit);
+  const { countries, isLoading, error, refetch } = useExoClickStatsByCountry(dateFrom, dateTo, limit);
   const rows: CountryRow[] = (countries as CountryRow[] | null) ?? [];
 
   const sorted = [...rows].sort((a, b) => {
@@ -85,6 +85,7 @@ export default function ExoClickCountryBreakdownView({ dateFrom, dateTo, onDateF
       {error && (
         <div className="flex items-center gap-2 text-sm text-red-500">
           <AlertCircle className="w-4 h-4" /> Failed to load country breakdown.
+          <button onClick={() => refetch()} className="text-xs underline">Retry</button>
         </div>
       )}
 

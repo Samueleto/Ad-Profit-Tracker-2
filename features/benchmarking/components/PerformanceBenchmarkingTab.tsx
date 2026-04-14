@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
+import { toast } from 'sonner';
 import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
@@ -57,9 +59,9 @@ interface BenchmarkData {
 
 // ─── Auth fetch ───────────────────────────────────────────────────────────────
 
-async function authFetch(path: string): Promise<Response> {
+async function authFetch(path: string, refresh = false): Promise<Response> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
+  const token = await auth.currentUser?.getIdToken(refresh);
   return fetch(path, {
     headers: {
       'Content-Type': 'application/json',
@@ -154,6 +156,7 @@ interface PerformanceBenchmarkingTabProps {
 }
 
 export default function PerformanceBenchmarkingTab({ dateFrom, dateTo, onSyncNow }: PerformanceBenchmarkingTabProps) {
+  const router = useRouter();
   const [loaded, setLoaded] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -168,11 +171,25 @@ export default function PerformanceBenchmarkingTab({ dateFrom, dateTo, onSyncNow
     setLoading(true);
     setError(null);
     try {
-      const [compRes, benchRes, scoreRes] = await Promise.all([
+      let [compRes, benchRes, scoreRes] = await Promise.all([
         authFetch(`/api/networks/comparison?dateFrom=${dateFrom}&dateTo=${dateTo}`),
         authFetch(`/api/benchmarks/performance?dateFrom=${dateFrom}&dateTo=${dateTo}`),
         authFetch('/api/benchmarks/score'),
       ]);
+
+      // If any request returned 401, refresh token and retry all
+      if (compRes.status === 401 || benchRes.status === 401 || scoreRes.status === 401) {
+        [compRes, benchRes, scoreRes] = await Promise.all([
+          authFetch(`/api/networks/comparison?dateFrom=${dateFrom}&dateTo=${dateTo}`, true),
+          authFetch(`/api/benchmarks/performance?dateFrom=${dateFrom}&dateTo=${dateTo}`, true),
+          authFetch('/api/benchmarks/score', true),
+        ]);
+        if (compRes.status === 401 || benchRes.status === 401 || scoreRes.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
 
       const compData = compRes.ok ? await compRes.json() : null;
       const benchData = benchRes.ok ? await benchRes.json() : null;
@@ -214,7 +231,7 @@ export default function PerformanceBenchmarkingTab({ dateFrom, dateTo, onSyncNow
       setLoading(false);
       loadingRef.current = false;
     }
-  }, [dateFrom, dateTo, metric]);
+  }, [dateFrom, dateTo, metric, router]);
 
   // Reset loaded state when date range changes so data is re-fetched
   const prevDatesRef = useRef({ dateFrom, dateTo });

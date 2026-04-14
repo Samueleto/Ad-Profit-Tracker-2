@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react';
 import { Loader2, AlertTriangle, ShieldAlert } from 'lucide-react';
 import Link from 'next/link';
 import { usePreferences, type Preferences } from '../hooks/usePreferences';
-import { Toast } from '@/components/ui/Toast';
+import { toast } from 'sonner';
 import PreferencesSkeleton from './PreferencesSkeleton';
 
 interface PreferencesCardProps {
@@ -67,9 +67,7 @@ export default function PreferencesCard({ initialPreferences, isDefaults: initia
     isDefaults,
     saveStatus,
     fieldErrors,
-    toastMsg,
     isRateLimited,
-    dismissToast,
     updatePreference,
     saveAll,
     fetchPreferences,
@@ -82,6 +80,11 @@ export default function PreferencesCard({ initialPreferences, isDefaults: initia
   useEffect(() => {
     if (loadState === 'loaded') setTzSearch(prefs.timezone);
   }, [loadState]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Show success toast when preferences are saved
+  useEffect(() => {
+    if (saveStatus === 'success') toast.success('Preferences saved');
+  }, [saveStatus]);
 
   const saving = saveStatus === 'saving';
   const disabled = saving || isRateLimited;
@@ -163,11 +166,6 @@ export default function PreferencesCard({ initialPreferences, isDefaults: initia
           <AlertTriangle className="w-4 h-4 flex-shrink-0" />
           {fieldErrors['_general']}
         </div>
-      )}
-
-      {/* Success toast */}
-      {saveStatus === 'success' && (
-        <Toast message="Preferences saved" variant="success" />
       )}
 
       <div className="space-y-5">
@@ -278,16 +276,6 @@ export default function PreferencesCard({ initialPreferences, isDefaults: initia
         </button>
       </div>
 
-      {/* Toast for non-field errors (network, 429, 500 on PATCH, session expired) */}
-      {toastMsg && (
-        <Toast
-          key={toastMsg}
-          message={toastMsg}
-          variant="error"
-          durationMs={5000}
-          onClose={dismissToast}
-        />
-      )}
     </div>
   );
 }

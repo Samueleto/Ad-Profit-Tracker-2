@@ -13,7 +13,17 @@ export async function GET(request: Request) {
   const authResult = await verifyAuthToken(request);
   if ("error" in authResult) return authResult.error;
 
+  // Build userQuotaConfig: per-endpoint rate limits visible in the UI
+  const userQuotaConfig: Record<string, { requestsPerHour: number; requestsPerDay: number }> = {};
+  for (const networkId of SUPPORTED_NETWORKS) {
+    userQuotaConfig[`/api/networks/${networkId}/sync`] = RATE_LIMIT_CONFIG[networkId] ?? { requestsPerHour: 60, requestsPerDay: 500 };
+  }
+
   return NextResponse.json({
+    // Aliases expected by useRateLimitConfig hook
+    networkLimiters: RATE_LIMIT_CONFIG,
+    userQuotaConfig,
+    // Also keep original fields for backward compatibility
     config: RATE_LIMIT_CONFIG,
     networks: SUPPORTED_NETWORKS,
   });

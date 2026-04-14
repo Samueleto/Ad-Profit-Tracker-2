@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
 import { AlertCircle } from 'lucide-react';
+import { toast } from 'sonner';
 
 interface NetworkSummary {
   networkId: string;
@@ -23,13 +25,14 @@ function toISODate(daysAgo: number): string {
   return d.toISOString().split('T')[0];
 }
 
-async function authFetch(path: string): Promise<Response> {
+async function authFetch(path: string, refresh = false): Promise<Response> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
+  const token = await auth.currentUser?.getIdToken(refresh);
   return fetch(path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
 }
 
 export default function ErrorSummaryWidget({ onNetworkClick }: { onNetworkClick?: (networkId: string) => void }) {
+  const router = useRouter();
   const [days, setDays] = useState(7);
   const [data, setData] = useState<SummaryData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -39,13 +42,21 @@ export default function ErrorSummaryWidget({ onNetworkClick }: { onNetworkClick?
     setLoading(true);
     setError(false);
     try {
-      const params = new URLSearchParams({ startDate: toISODate(d), endDate: new Date().toISOString().split('T')[0] });
-      const res = await authFetch(`/api/errors/summary?${params}`);
+      const params = new URLSearchParams({ dateFrom: toISODate(d), dateTo: new Date().toISOString().split('T')[0] });
+      let res = await authFetch(`/api/errors/summary?${params}`);
+      if (res.status === 401) {
+        res = await authFetch(`/api/errors/summary?${params}`, true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (!res.ok) { setError(true); return; }
       setData(await res.json());
     } catch { setError(true); }
     finally { setLoading(false); }
-  }, []);
+  }, [router]);
 
   useEffect(() => { fetchSummary(days); }, [fetchSummary, days]);
 

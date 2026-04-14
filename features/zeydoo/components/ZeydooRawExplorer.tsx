@@ -4,7 +4,11 @@ import { useState } from 'react';
 import { Loader2, AlertCircle } from 'lucide-react';
 import { useZeydooRawResponse } from '../hooks/useZeydooStats';
 
-export default function ZeydooRawExplorer() {
+interface ZeydooRawExplorerProps {
+  onGoToSync?: () => void;
+}
+
+export default function ZeydooRawExplorer({ onGoToSync }: ZeydooRawExplorerProps) {
   const [date, setDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 1);
@@ -45,10 +49,27 @@ export default function ZeydooRawExplorer() {
         </div>
       )}
 
-      {error && (
+      {error && status === 404 && (
+        <div className="text-center py-8 space-y-3">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            No data for this date — try syncing this date range first.
+          </p>
+          {onGoToSync && (
+            <button
+              onClick={onGoToSync}
+              className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+            >
+              Go to Sync tab →
+            </button>
+          )}
+        </div>
+      )}
+
+      {error && status !== 404 && (
         <div className="flex items-center gap-2 text-sm text-red-500">
           <AlertCircle className="w-4 h-4" />
-          {status === 404 ? 'No data for this date — try syncing first.' : 'Failed to load raw response.'}
+          Failed to load raw response.
+          <button onClick={handleFetch} className="text-xs underline">Retry</button>
         </div>
       )}
 
@@ -91,7 +112,7 @@ export default function ZeydooRawExplorer() {
         </div>
       )}
 
-      {!fetched && !isLoading && (
+      {!fetched && !isLoading && !error && (
         <p className="text-xs text-gray-400 dark:text-gray-500">Pick a date and click Fetch Raw to view the raw API response.</p>
       )}
     </div>

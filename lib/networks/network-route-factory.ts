@@ -78,29 +78,15 @@ export function makeStatsHandler(networkId: NetworkId) {
       let query = adminDb
         .collection("adStats")
         .where("uid", "==", uid)
-        .where("networkId", "==", networkId)
-        .orderBy("date", "desc")
-        .limit(limit);
+        .where("networkId", "==", networkId) as FirebaseFirestore.Query;
 
-      if (dateFrom) {
-        query = adminDb
-          .collection("adStats")
-          .where("uid", "==", uid)
-          .where("networkId", "==", networkId)
-          .where("date", ">=", dateFrom)
-          .orderBy("date", "desc")
-          .limit(limit);
-      }
+      if (dateFrom) query = query.where("date", ">=", dateFrom);
+      if (dateTo) query = query.where("date", "<=", dateTo);
+
+      query = query.orderBy("date", "desc").limit(limit);
 
       const snapshot = await query.get();
-      let stats = snapshot.docs.map(serializeDoc);
-
-      if (dateTo) {
-        stats = stats.filter((s) => {
-          const d = s && (s as Record<string, unknown>).date;
-          return typeof d === "string" && d <= dateTo;
-        });
-      }
+      const stats = snapshot.docs.map(serializeDoc);
 
       const totals = stats.reduce(
         (acc: { impressions: number; clicks: number; revenue: number; cost: number }, s) => {
@@ -149,7 +135,10 @@ export function makeSyncHandler(networkId: NetworkId) {
 
       const apiKey = await getApiKey(uid, networkId);
       if (!apiKey) {
-        return NextResponse.json({ error: "API key not configured for this network" }, { status: 400 });
+        return NextResponse.json(
+          { error: "no_api_key", message: "No API key configured for this network. Add one in settings." },
+          { status: 404 }
+        );
       }
 
       const syncDate = dateFrom || new Date().toISOString().split("T")[0];
@@ -159,12 +148,21 @@ export function makeSyncHandler(networkId: NetworkId) {
       try {
         rawData = await fetchNetworkStats(networkId, apiKey, syncDate, endDate);
       } catch (fetchError) {
+        const errMsg = (fetchError as Error).message;
+        // Update networkConfig with failed status — best effort, don't block response
+        adminDb
+          .collection("users").doc(uid).collection("networkConfigs").doc(networkId)
+          .update({ lastSyncStatus: "failed", lastSyncError: errMsg })
+          .catch(() => {});
         await createAuditLog(uid, "sync_failed", networkId, {
-          error: (fetchError as Error).message,
+          error: errMsg,
           dateFrom: syncDate,
           dateTo: endDate,
         });
-        return NextResponse.json({ error: "Failed to fetch data from network API" }, { status: 502 });
+        return NextResponse.json(
+          { error: "network_api_error", message: `${networkId} API returned an error — please try again later.` },
+          { status: 502 }
+        );
       }
 
       // Sanitize raw response — strip fields with sensitive names before storing
@@ -249,10 +247,10 @@ export function makeSyncStatusHandler(networkId: NetworkId) {
     try {
       const logsSnapshot = await adminDb
         .collection("auditLogs")
-        .where("uid", "==", uid)
+        .where("userId", "==", uid)
         .where("networkId", "==", networkId)
         .where("action", "in", ["sync_completed", "sync_failed", "sync_triggered"])
-        .orderBy("timestamp", "desc")
+        .orderBy("createdAt", "desc")
         .limit(10)
         .get();
 
@@ -312,10 +310,26 @@ export function makeRawResponseHandler(networkId: NetworkId) {
         .get();
 
       if (!rawDoc.exists) {
-        return NextResponse.json({ error: "No raw response available" }, { status: 404 });
+        return NextResponse.json(
+          { error: "no_data_for_date", message: "No data found for this date. Try syncing this date range first." },
+          { status: 404 }
+        );
       }
 
-      return NextResponse.json(serializeDoc(rawDoc));
+      const docData = rawDoc.data()!;
+      // Expose the raw records array as `records` so hooks can read data?.records
+      const rawRecords = docData.data;
+      const records = Array.isArray(rawRecords)
+        ? rawRecords
+        : rawRecords !== undefined && rawRecords !== null
+          ? [rawRecords]
+          : [];
+
+      return NextResponse.json({
+        ...serializeDoc(rawDoc),
+        records,
+        fieldSchema: NETWORK_API_CONFIGS[networkId].fieldSchema,
+      });
     } catch (error) {
       console.error(`GET /api/networks/${networkId}/raw-response error:`, error);
       return NextResponse.json({ error: "Internal server error" }, { status: 500 });

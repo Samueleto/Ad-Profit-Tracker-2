@@ -1,8 +1,29 @@
 'use client';
 
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Loader2, CheckCircle, AlertCircle, Info } from 'lucide-react';
 import { getAuth } from 'firebase/auth';
+
+function mapSyncError(status: number, body: Record<string, unknown>): string {
+  switch (status) {
+    case 400:
+      if (String(body.error ?? '').includes('network') || String(body.message ?? '').includes('disabled')) {
+        return 'Zeydoo is currently disabled. Enable it in your network settings.';
+      }
+      return 'Please check your date range — dates must be valid and within 90 days.';
+    case 401:
+      return '__session_expired__';
+    case 404:
+      return 'No Zeydoo API key found. Add your API key in the network settings first.';
+    case 429:
+      return "You've hit the sync limit (10/hour). Please wait before syncing again.";
+    case 502:
+      return "Zeydoo's API is currently unavailable. Try again in a few minutes.";
+    default:
+      return 'Something went wrong on our end. Please try again.';
+  }
+}
 
 function yesterday(): string {
   const d = new Date();
@@ -15,11 +36,22 @@ interface ZeydooSyncControlProps {
 }
 
 export default function ZeydooSyncControl({ onSyncComplete }: ZeydooSyncControlProps) {
+  const router = useRouter();
   const [dateFrom, setDateFrom] = useState(yesterday);
   const [dateTo, setDateTo] = useState(yesterday);
   const [status, setStatus] = useState<'idle' | 'loading' | 'success' | 'error'>('idle');
   const [resultMsg, setResultMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const doRequest = async (token: string | undefined) =>
+    fetch('/api/networks/zeydoo/sync', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ dateFrom, dateTo }),
+    });
 
   const handleSync = async () => {
     setStatus('loading');
@@ -27,26 +59,34 @@ export default function ZeydooSyncControl({ onSyncComplete }: ZeydooSyncControlP
     setErrorMsg(null);
     try {
       const auth = getAuth();
-      const token = await auth.currentUser?.getIdToken();
-      const res = await fetch('/api/networks/zeydoo/sync', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ dateFrom, dateTo }),
-      });
+      let token = await auth.currentUser?.getIdToken();
+      let res = await doRequest(token);
+
+      // 401 — try token refresh once
+      if (res.status === 401) {
+        token = await auth.currentUser?.getIdToken(true).catch(() => undefined);
+        res = await doRequest(token);
+        if (res.status === 401) {
+          router.replace('/');
+          return;
+        }
+      }
+
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
-        throw new Error(body.error ?? `Sync failed (${res.status})`);
+        const msg = mapSyncError(res.status, body);
+        setErrorMsg(msg);
+        setStatus('error');
+        return;
       }
+
       const data = await res.json();
       setStatus('success');
       setResultMsg(`Sync complete — ${data.rowsFetched ?? 0} rows fetched in ${data.latencyMs ?? 0}ms`);
       onSyncComplete?.();
-    } catch (err) {
+    } catch {
       setStatus('error');
-      setErrorMsg(err instanceof Error ? err.message : 'Sync failed');
+      setErrorMsg('Something went wrong on our end. Please try again.');
     }
   };
 
@@ -73,7 +113,12 @@ export default function ZeydooSyncControl({ onSyncComplete }: ZeydooSyncControlP
 
       <div className="flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">
         <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
-        Syncing pulls Zeydoo revenue data for the selected date range.
+        Zeydoo allows up to 10 syncs per hour. Repeated syncs for the same date range may be rate-limited.
+      </div>
+
+      <div className="flex items-start gap-2 text-xs text-gray-500 dark:text-gray-400">
+        <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+        Daily syncs run automatically every night via a scheduled job — you don't need to manually sync yesterday's data each day.
       </div>
 
       {status === 'success' && resultMsg && (
@@ -84,7 +129,7 @@ export default function ZeydooSyncControl({ onSyncComplete }: ZeydooSyncControlP
 
       {status === 'error' && errorMsg && (
         <div className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400">
-          <AlertCircle className="w-4 h-4" /> {errorMsg}
+          <AlertCircle className="w-4 h-4 flex-shrink-0" /> {errorMsg}
         </div>
       )}
     </div>

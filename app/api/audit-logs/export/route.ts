@@ -34,8 +34,24 @@ export async function GET(request: Request) {
   try {
     const { searchParams } = new URL(request.url);
     const format = searchParams.get("format") || "json";
-    const startDate = searchParams.get("startDate");
-    const endDate = searchParams.get("endDate");
+    const action = searchParams.get("action");
+    const status = searchParams.get("status");
+    const preset = searchParams.get("preset");
+    const search = searchParams.get("search");
+
+    // Resolve date range from explicit params or preset
+    let startDate = searchParams.get("startDate");
+    let endDate = searchParams.get("endDate");
+    if (!startDate && !endDate && preset) {
+      const days = preset === "7d" ? 7 : preset === "30d" ? 30 : preset === "90d" ? 90 : null;
+      if (days !== null) {
+        const now = new Date();
+        endDate = now.toISOString().slice(0, 10);
+        const from = new Date(now);
+        from.setDate(now.getDate() - days + 1);
+        startDate = from.toISOString().slice(0, 10);
+      }
+    }
 
     // Hard cap enforced regardless of filters — userId always from verified token
     const snapshot = await adminDb
@@ -49,28 +65,43 @@ export async function GET(request: Request) {
       const data = doc.data();
       return {
         id: doc.id,
-        action: data.action,
+        action: data.action as string,
         networkId: data.networkId || null,
-        metadata: data.metadata || null,
+        status: (data.status as string) ?? null,
+        details: data.details ?? data.metadata ?? null,
         createdAt: data.createdAt?.toDate?.()?.toISOString() || null,
       };
     });
 
+    if (action) {
+      const actions = action.split(",").map(s => s.trim()).filter(Boolean);
+      logs = logs.filter((log) => actions.includes(log.action));
+    }
+    if (status) {
+      logs = logs.filter((log) => log.status === status);
+    }
     if (startDate) {
-      logs = logs.filter((log) => log.createdAt && log.createdAt >= startDate);
+      logs = logs.filter((log) => log.createdAt && log.createdAt >= startDate!);
     }
     if (endDate) {
-      logs = logs.filter((log) => log.createdAt && log.createdAt <= endDate + "T23:59:59Z");
+      logs = logs.filter((log) => log.createdAt && log.createdAt <= endDate! + "T23:59:59Z");
+    }
+    if (search) {
+      const q = search.toLowerCase();
+      logs = logs.filter((log) =>
+        JSON.stringify(log.details ?? {}).toLowerCase().includes(q) ||
+        log.action.toLowerCase().includes(q)
+      );
     }
 
     if (format === "csv") {
-      const header = "id,action,networkId,metadata,createdAt\n";
+      const header = "id,action,networkId,details,createdAt\n";
       const rows = logs.map((log) =>
         [
           log.id,
           log.action,
           log.networkId || "",
-          JSON.stringify(log.metadata ?? ""),
+          JSON.stringify((log as Record<string, unknown>).details ?? ""),
           log.createdAt || "",
         ].join(",")
       );

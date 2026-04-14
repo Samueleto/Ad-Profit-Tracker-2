@@ -58,17 +58,21 @@ export async function POST(request: Request) {
 
       // Create audit log
       await adminDb.collection("auditLogs").add({
-        uid,
+        userId: uid,
         action: "sync_triggered",
         networkId,
         jobId: syncRef.id,
-        timestamp: FieldValue.serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
       });
 
       results[networkId] = "queued";
     }
 
-    return NextResponse.json({ success: true, results });
+    const triggered = Object.values(results).filter(v => v === "queued").length;
+    const skipped = Object.values(results).filter(v => v.startsWith("skipped")).length;
+    const failed = Object.values(results).filter(v => v.startsWith("error")).length;
+
+    return NextResponse.json({ success: true, results, triggered, skipped, failed });
   } catch (error) {
     console.error("POST /api/networks/sync-all error:", error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

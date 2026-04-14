@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
 import { AlertCircle, Edit2, Check, X } from 'lucide-react';
+import { toast } from 'sonner';
 
 const NETWORKS = ['exoclick', 'rollerads', 'zeydoo', 'propush'] as const;
 type Network = typeof NETWORKS[number];
@@ -16,9 +18,9 @@ interface NetworkConfig {
   backoffSchedule?: BackoffEntry[];
 }
 
-async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
+async function authFetch(path: string, init: RequestInit = {}, refresh = false): Promise<Response> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
+  const token = await auth.currentUser?.getIdToken(refresh);
   return fetch(path, {
     ...init,
     headers: {
@@ -30,6 +32,7 @@ async function authFetch(path: string, init: RequestInit = {}): Promise<Response
 }
 
 export default function RetryConfigPanel({ onSaveSuccess }: { onSaveSuccess?: () => void }) {
+  const router = useRouter();
   const [configs, setConfigs] = useState<NetworkConfig[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -44,13 +47,21 @@ export default function RetryConfigPanel({ onSaveSuccess }: { onSaveSuccess?: ()
     setLoading(true);
     setError(false);
     try {
-      const res = await authFetch('/api/errors/retry-config');
+      let res = await authFetch('/api/errors/retry-config');
+      if (res.status === 401) {
+        res = await authFetch('/api/errors/retry-config', {}, true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (!res.ok) { setError(true); return; }
       const data = await res.json();
       setConfigs(data.configs ?? data.networks ?? []);
     } catch { setError(true); }
     finally { setLoading(false); }
-  }, []);
+  }, [router]);
 
   useEffect(() => { fetchConfigs(); }, [fetchConfigs]);
 
@@ -75,13 +86,20 @@ export default function RetryConfigPanel({ onSaveSuccess }: { onSaveSuccess?: ()
     setValidationErrors({});
     setSaving(true);
     setSaveError(null);
+    const saveInit = { method: 'PATCH', body: JSON.stringify({ networkId: editing, retryAttempts: editRetry, timeoutSeconds: editTimeout }) };
     try {
-      const res = await authFetch('/api/errors/retry-config', {
-        method: 'PATCH',
-        body: JSON.stringify({ networkId: editing, retryAttempts: editRetry, timeoutSeconds: editTimeout }),
-      });
+      let res = await authFetch('/api/errors/retry-config', saveInit);
+      if (res.status === 401) {
+        res = await authFetch('/api/errors/retry-config', saveInit, true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (res.status === 429) { setSaveError('Rate limit — try again later.'); return; }
       if (!res.ok) { setSaveError('Failed to save config.'); return; }
+      toast.success('Retry config saved.');
       setEditing(null);
       fetchConfigs();
       onSaveSuccess?.();

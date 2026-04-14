@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { getAuth } from 'firebase/auth';
 import { X, Loader2, ChevronDown, Send } from 'lucide-react';
+import { toast } from 'sonner';
 import { format, addDays } from 'date-fns';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -107,7 +108,6 @@ export default function ScheduleReportModal({ reportId, reportName, onClose, onS
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [testSending, setTestSending] = useState(false);
-  const [toast, setToast] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [emailError, setEmailError] = useState<string | null>(null);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -188,8 +188,8 @@ export default function ScheduleReportModal({ reportId, reportName, onClose, onS
         const data = await res.json();
         if (data?.id) setExistingId(data.id);
         onSaved?.();
-        setToast('Schedule saved');
-        setTimeout(() => { setToast(null); onClose(); }, 1500);
+        toast.success('Schedule saved');
+        setTimeout(() => onClose(), 1500);
       } else {
         setError('Failed to save schedule. Please try again.');
       }
@@ -208,8 +208,8 @@ export default function ScheduleReportModal({ reportId, reportName, onClose, onS
     if (res.status === 429) { setError(RATE_LIMIT_MESSAGES.delete); return; }
     if (res.ok) {
       onDeleted?.();
-      setToast('Schedule deleted');
-      setTimeout(() => { setToast(null); onClose(); }, 1500);
+      toast.success('Schedule deleted');
+      setTimeout(() => onClose(), 1500);
     }
   }
 
@@ -223,8 +223,7 @@ export default function ScheduleReportModal({ reportId, reportName, onClose, onS
       if (res.status === 401) { onClose(); window.location.replace('/'); return; }
       if (res.status === 429) { setError(RATE_LIMIT_MESSAGES.sendNow); return; }
       if (res.ok) {
-        setToast(`Test email sent to ${schedule.email}`);
-        setTimeout(() => setToast(null), 3000);
+        toast.success(`Test email sent to ${schedule.email}`);
       } else {
         setError(`Send failed (${res.status})`);
       }
@@ -438,12 +437,6 @@ export default function ScheduleReportModal({ reportId, reportName, onClose, onS
                 </div>
               )}
 
-              {/* Toast */}
-              {toast && (
-                <div className="text-xs text-green-700 dark:text-green-400 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg px-3 py-2">
-                  {toast}
-                </div>
-              )}
             </>
           )}
         </div>

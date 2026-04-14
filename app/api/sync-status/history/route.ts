@@ -16,18 +16,18 @@ export async function GET(request: Request) {
 
     let query = adminDb
       .collection("auditLogs")
-      .where("uid", "==", uid)
+      .where("userId", "==", uid)
       .where("action", "in", ["sync_completed", "sync_failed", "sync_triggered"])
-      .orderBy("timestamp", "desc")
+      .orderBy("createdAt", "desc")
       .limit(limit);
 
     if (networkId && isValidNetworkId(networkId)) {
       query = adminDb
         .collection("auditLogs")
-        .where("uid", "==", uid)
+        .where("userId", "==", uid)
         .where("networkId", "==", networkId)
         .where("action", "in", ["sync_completed", "sync_failed", "sync_triggered"])
-        .orderBy("timestamp", "desc")
+        .orderBy("createdAt", "desc")
         .limit(limit);
     }
 

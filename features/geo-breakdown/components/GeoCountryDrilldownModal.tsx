@@ -52,7 +52,7 @@ export default function GeoCountryDrilldownModal({
     setModalState('loading');
     try {
       const res = await fetchWithAuth(
-        `/api/stats/snapshot?country=${countryCode}&from=${fromDate}&to=${toDate}`
+        `/api/stats/snapshot?country=${countryCode}&dateFrom=${fromDate}&dateTo=${toDate}`
       );
 
       if (res.status === 401) {

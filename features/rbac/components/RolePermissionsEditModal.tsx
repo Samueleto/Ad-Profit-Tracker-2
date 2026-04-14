@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { X, Loader2, AlertTriangle, CheckCircle } from 'lucide-react';
+import { X, Loader2, AlertTriangle } from 'lucide-react';
+import { toast } from 'sonner';
 import { getAuth } from 'firebase/auth';
 import { PERMISSION_KEYS, SYSTEM_DEFAULTS } from '@/lib/rbac/systemDefaults';
 import type { WorkspaceRole, PermissionKey, PermissionMap, RolePermissionsMatrix } from '@/lib/rbac/systemDefaults';
@@ -62,7 +63,6 @@ export default function RolePermissionsEditModal({
   }));
   const [saving, setSaving] = useState(false);
   const [errorCode, setErrorCode] = useState<number | null>(null);
-  const [toast, setToast] = useState('');
 
   useEffect(() => {
     if (copyFromRole && EDITABLE.includes(copyFromRole as EditableRole)) {
@@ -104,7 +104,7 @@ export default function RolePermissionsEditModal({
         if (res.status === 401) { onClose(); router.push('/'); return; }
       }
       if (!res.ok) { setErrorCode(res.status); return; }
-      setToast('Permissions updated');
+      toast.success('Permissions updated');
       setTimeout(() => onSaved(), 1000);
     } finally { setSaving(false); }
   };
@@ -118,7 +118,7 @@ export default function RolePermissionsEditModal({
         headers,
         body: JSON.stringify({ resetToDefaults: true }),
       });
-      if (res.ok) { setToast('Reset to defaults'); setTimeout(() => onSaved(), 1000); }
+      if (res.ok) { toast.success('Reset to defaults'); setTimeout(() => onSaved(), 1000); }
       else setErrorCode(res.status);
     } finally { setSaving(false); }
   };
@@ -174,14 +174,7 @@ export default function RolePermissionsEditModal({
             </div>
           )}
 
-          {toast && (
-            <div className="flex items-center gap-2 px-3 py-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg">
-              <CheckCircle className="w-3.5 h-3.5 text-green-500" />
-              <span className="text-xs text-green-700 dark:text-green-300">{toast}</span>
-            </div>
-          )}
-
-          {CATEGORIES.map(cat => (
+{CATEGORIES.map(cat => (
             <div key={cat.label}>
               <p className="text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wide mb-1">{cat.label}</p>
               <div className="border border-gray-200 dark:border-gray-700 rounded-xl divide-y divide-gray-100 dark:divide-gray-700/50 overflow-hidden">

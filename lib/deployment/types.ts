@@ -9,11 +9,13 @@ export interface HealthResponseOk {
   memoryMB: number;
   uptime: number;
   version: string;
+  credentialsConfigured: boolean;
 }
 
 export interface HealthResponseError {
   status: 'unhealthy';
   error: string;
+  credentialsConfigured: boolean;
 }
 
 export type HealthResponse = HealthResponseOk | HealthResponseError;

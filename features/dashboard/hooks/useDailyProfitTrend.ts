@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { getAuthHeaders } from '@/lib/auth/getAuthHeaders';
+import { useRouter } from 'next/navigation';
+import { getAuth } from 'firebase/auth';
+import { toast } from 'sonner';
 import { format, subDays, startOfMonth, differenceInDays } from 'date-fns';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -75,9 +77,15 @@ function computePatternInsights(series: SeriesPoint[], priorPeriodTotal: number 
   };
 }
 
-async function authFetch<T>(path: string): Promise<T> {
-  const headers = await getAuthHeaders();
-  const res = await fetch(path, { headers });
+async function authFetch<T>(path: string, forceRefresh = false): Promise<T> {
+  const auth = getAuth();
+  const token = await auth.currentUser?.getIdToken(forceRefresh);
+  const res = await fetch(path, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  });
   if (!res.ok) {
     const err = new Error(`Request failed: ${res.status}`);
     (err as Error & { status: number }).status = res.status;
@@ -89,6 +97,7 @@ async function authFetch<T>(path: string): Promise<T> {
 // ─── useDailyProfitTrend ──────────────────────────────────────────────────────
 
 export function useDailyProfitTrend(dateFrom: string, dateTo: string) {
+  const router = useRouter();
   const [seriesData, setSeriesData] = useState<SeriesPoint[]>([]);
   const [priorTotal, setPriorTotal] = useState<number | null>(null);
   const [status, setStatus] = useState<TrendStatus>('idle');
@@ -112,15 +121,28 @@ export function useDailyProfitTrend(dateFrom: string, dateTo: string) {
     const breakdownParams = new URLSearchParams({ dateFrom, dateTo, dimension: 'daily' });
     const priorParams = new URLSearchParams({ dateFrom: priorFrom, dateTo: priorTo, groupBy: 'total' });
 
+    const fetchAll = async (forceRefresh: boolean) => {
+      const [computeData, breakdownData, priorData] = await Promise.all([
+        authFetch<{ series?: { date?: string; key?: string; netProfit?: number; revenue?: number; cost?: number; roi?: number; colorCode?: string; roiIndicator?: string }[] }>(`/api/roi/compute?${computeParams}`, forceRefresh),
+        authFetch<{ breakdown?: { key?: string; netProfit?: number; revenue?: number; cost?: number; roi?: number; colorCode?: string; roiIndicator?: string }[] }>(`/api/roi/breakdown?${breakdownParams}`, forceRefresh),
+        authFetch<{ netProfit?: number }>(`/api/roi/compute?${priorParams}`, forceRefresh).catch(() => null),
+      ]);
+      return { computeData, breakdownData, priorData };
+    };
+
     (async () => {
       try {
-        const [computeData, breakdownData, priorData] = await Promise.all([
-          authFetch<{ series?: { date?: string; key?: string; netProfit?: number; revenue?: number; cost?: number; roi?: number; colorCode?: string; roiIndicator?: string }[] }>(`/api/roi/compute?${computeParams}`),
-          authFetch<{ breakdown?: { key?: string; netProfit?: number; revenue?: number; cost?: number; roi?: number; colorCode?: string; roiIndicator?: string }[] }>(`/api/roi/breakdown?${breakdownParams}`),
-          authFetch<{ netProfit?: number }>(`/api/roi/compute?${priorParams}`).catch(() => null),
-        ]);
+        let result;
+        try {
+          result = await fetchAll(false);
+        } catch (firstErr) {
+          if ((firstErr as Error & { status?: number }).status !== 401) throw firstErr;
+          result = await fetchAll(true);
+        }
 
         if (abortRef.current?.signal.aborted) return;
+
+        const { computeData, breakdownData, priorData } = result;
 
         // Merge by date
         const breakdownByDate = new Map(
@@ -149,6 +171,7 @@ export function useDailyProfitTrend(dateFrom: string, dateTo: string) {
         if (abortRef.current?.signal.aborted) return;
         if (err instanceof Error && err.name === 'AbortError') return;
         const status = (err as Error & { status?: number }).status ?? 500;
+        if (status === 401) { toast.error('Session expired. Please sign in again.'); router.replace('/'); return; }
         setErrorType(status);
         setStatus('error');
       }
@@ -156,7 +179,7 @@ export function useDailyProfitTrend(dateFrom: string, dateTo: string) {
 
     return () => { abortRef.current?.abort(); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [dateFrom, dateTo, retryTick]);
+  }, [dateFrom, dateTo, retryTick, router]);
 
   const retry = useCallback(() => setRetryTick(n => n + 1), []);
 
@@ -175,6 +198,7 @@ export function useDailyProfitTrend(dateFrom: string, dateTo: string) {
 // ─── useDaySnapshot (lazy) ────────────────────────────────────────────────────
 
 export function useDaySnapshot() {
+  const router = useRouter();
   const [date, setDate] = useState<string | null>(null);
   const [data, setData] = useState<unknown>(null);
   const [loading, setLoading] = useState(false);
@@ -184,11 +208,25 @@ export function useDaySnapshot() {
     if (!date) return;
     setLoading(true);
     setError(null);
-    authFetch<unknown>(`/api/stats/snapshot?date=${date}`)
-      .then(d => setData(d))
-      .catch(err => setError(err.message))
-      .finally(() => setLoading(false));
-  }, [date]);
+    (async () => {
+      try {
+        let d: unknown;
+        try {
+          d = await authFetch<unknown>(`/api/stats/snapshot?date=${date}`);
+        } catch (firstErr) {
+          if ((firstErr as Error & { status?: number }).status !== 401) throw firstErr;
+          d = await authFetch<unknown>(`/api/stats/snapshot?date=${date}`, true);
+        }
+        setData(d);
+      } catch (err) {
+        const status = (err as Error & { status?: number }).status ?? 500;
+        if (status === 401) { toast.error('Session expired. Please sign in again.'); router.replace('/'); return; }
+        setError(err instanceof Error ? err.message : 'Failed to load.');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [date, router]);
 
   return { fetchSnapshot: setDate, data, loading, error };
 }

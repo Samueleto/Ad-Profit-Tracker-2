@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
+import { toast } from 'sonner';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
 interface NetworkRetryState {
@@ -15,9 +17,9 @@ interface NetworkRetryState {
   circuitBreakerOpen?: boolean;
 }
 
-async function authFetch(path: string): Promise<Response> {
+async function authFetch(path: string, refresh = false): Promise<Response> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
+  const token = await auth.currentUser?.getIdToken(refresh);
   return fetch(path, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
 }
 
@@ -29,6 +31,7 @@ function formatCountdown(seconds: number): string {
 }
 
 export default function RetryStatePanel({ refreshTrigger = 0 }: { refreshTrigger?: number }) {
+  const router = useRouter();
   const [states, setStates] = useState<NetworkRetryState[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
@@ -40,7 +43,11 @@ export default function RetryStatePanel({ refreshTrigger = 0 }: { refreshTrigger
     setLoading(true);
     setError(false);
     try {
-      const res = await authFetch('/api/errors/retry-state');
+      let res = await authFetch('/api/errors/retry-state');
+      if (res.status === 401) {
+        res = await authFetch('/api/errors/retry-state', true);
+        if (res.status === 401) { toast.error('Session expired. Please sign in again.'); router.replace('/'); return; }
+      }
       if (!res.ok) { setError(true); return; }
       const data = await res.json();
       const nets: NetworkRetryState[] = data.networks ?? data.states ?? [];
@@ -53,7 +60,7 @@ export default function RetryStatePanel({ refreshTrigger = 0 }: { refreshTrigger
       setCountdowns(initial);
     } catch { setError(true); }
     finally { setLoading(false); }
-  }, []);
+  }, [router]);
 
   // Initial load
   useEffect(() => { fetchState(); }, [fetchState]);

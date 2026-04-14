@@ -106,7 +106,7 @@ export async function POST(request: Request) {
       userId: uid,
       action: 'send_alert_email',
       resourceType: 'email',
-      metadata: { alertType, deliveryEmail, source: 'internal' },
+      details: { alertType, deliveryEmail, source: 'internal' },
       status: 'queued',
       createdAt: FieldValue.serverTimestamp(),
     }).catch(err => console.error('audit log write failed:', err));
@@ -142,7 +142,7 @@ export async function POST(request: Request) {
       userId: uid,
       action: 'send_alert_email',
       resourceType: 'email',
-      metadata: { alertType, deliveryEmail, source: 'user' },
+      details: { alertType, deliveryEmail, source: 'user' },
       status: 'queued',
       createdAt: FieldValue.serverTimestamp(),
     }).catch(err => console.error('audit log write failed:', err));

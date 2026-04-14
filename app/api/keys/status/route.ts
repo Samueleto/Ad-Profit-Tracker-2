@@ -32,7 +32,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json(statuses);
   } catch (error) {
-    console.error("keys/status error:", error);
+    console.error("[keys/status] Firestore error", { uid, ts: new Date().toISOString(), error });
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
   }
 }

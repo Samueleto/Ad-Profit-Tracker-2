@@ -75,11 +75,30 @@ export async function GET(request: Request) {
     const profit = totals.revenue - totals.cost;
     const ctr = totals.impressions > 0 ? totals.clicks / totals.impressions : 0;
 
+    // Build per-network breakdown for HistoricalDataSection summary table
+    const networkMap: Record<string, { revenue: number; cost: number; lastSyncedAt: string | null; lastSyncStatus: string | null }> = {};
+    for (const s of stats) {
+      const row = s as Record<string, unknown>;
+      const nid = String(row.networkId ?? 'unknown');
+      if (!networkMap[nid]) {
+        networkMap[nid] = { revenue: 0, cost: 0, lastSyncedAt: null, lastSyncStatus: null };
+      }
+      networkMap[nid].revenue += Number(row.revenue) || 0;
+      networkMap[nid].cost += Number(row.cost) || 0;
+      const syncedAt = row.syncedAt as string | null;
+      if (syncedAt && (!networkMap[nid].lastSyncedAt || syncedAt > networkMap[nid].lastSyncedAt!)) {
+        networkMap[nid].lastSyncedAt = syncedAt;
+        networkMap[nid].lastSyncStatus = 'success';
+      }
+    }
+    const perNetwork = Object.entries(networkMap).map(([nid, v]) => ({ networkId: nid, ...v }));
+
     return NextResponse.json({
       networkId: networkId || null,
       dateFrom: dateFrom || null,
       dateTo: dateTo || null,
       totals: { ...totals, profit, ctr },
+      perNetwork,
       recordCount: stats.length,
     });
   } catch (error) {

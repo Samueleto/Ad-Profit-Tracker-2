@@ -8,9 +8,10 @@ import { DayPicker } from 'react-day-picker';
 import type { DateRange as DayPickerRange } from 'react-day-picker';
 import 'react-day-picker/style.css';
 import {
-  ChevronDown, ChevronRight, Loader2, AlertTriangle, CheckCircle,
+  ChevronDown, ChevronRight, Loader2, AlertTriangle,
   BookOpen, X, Edit2, Trash2, RotateCcw, Clock,
 } from 'lucide-react';
+import { toast } from 'sonner';
 import MobileDataTableWrapper, { type TableColumn } from '@/features/mobile/components/MobileDataTableWrapper';
 import ExportModal from '@/features/excel-export/components/ExportModal';
 import { useDashboardStore } from '@/store/dashboardStore';
@@ -115,12 +116,11 @@ interface SavedReportsSidebarProps {
   open: boolean;
   onClose: () => void;
   onLoad: (config: ReportConfig) => void;
-  onToast: (msg: string) => void;
   onSchedule: (report: SavedReport) => void;
   scheduleRefreshKey: number;
 }
 
-function SavedReportsSidebar({ open, onClose, onLoad, onToast, onSchedule, scheduleRefreshKey }: SavedReportsSidebarProps) {
+function SavedReportsSidebar({ open, onClose, onLoad, onSchedule, scheduleRefreshKey }: SavedReportsSidebarProps) {
   const [reports, setReports] = useState<SavedReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -156,7 +156,7 @@ function SavedReportsSidebar({ open, onClose, onLoad, onToast, onSchedule, sched
     const res = await authFetch(`/api/reports/${id}`, { method: 'PATCH', body: JSON.stringify({ name: renameVal }) });
     setRenaming(null);
     if (res.ok) {
-      onToast('Report renamed');
+      toast.success('Report renamed');
     }
     fetchReports();
   }
@@ -167,7 +167,7 @@ function SavedReportsSidebar({ open, onClose, onLoad, onToast, onSchedule, sched
     const res = await authFetch(`/api/reports/${id}`, { method: 'DELETE' });
     setDeleting(null);
     if (res.ok) {
-      onToast('Report deleted');
+      toast.success('Report deleted');
     }
     fetchReports();
   }
@@ -284,7 +284,6 @@ export default function CustomReportBuilderPage() {
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveName, setSaveName] = useState('');
   const [saving, setSaving] = useState(false);
-  const [saveToast, setSaveToast] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   // Inline config validation errors (shown near the relevant control)
@@ -323,7 +322,7 @@ export default function CustomReportBuilderPage() {
   }, []);
 
   const fetchSectionCounts = useCallback(async (cfg: ReportConfig) => {
-    const res = await authFetch(`/api/export/preview?from=${cfg.dateFrom}&to=${cfg.dateTo}`).catch(() => null);
+    const res = await authFetch(`/api/export/preview?dateFrom=${cfg.dateFrom}&dateTo=${cfg.dateTo}`).catch(() => null);
     if (res?.ok) {
       const data = await res.json();
       setSectionCounts(data?.sheets ?? {});
@@ -432,7 +431,7 @@ export default function CustomReportBuilderPage() {
         body: JSON.stringify({ ...config, limit: 100 }),
       });
       if (res.status === 401) {
-        setSaveToast('Session expired. Please sign in again.');
+        toast.error('Session expired. Please sign in again.');
         setTimeout(() => router.push('/'), 1500);
         return;
       }
@@ -482,13 +481,12 @@ export default function CustomReportBuilderPage() {
         body: JSON.stringify({ name: saveName, config }),
       });
       if (res.status === 401) {
-        setSaveToast('Session expired. Please sign in again.');
+        toast.error('Session expired. Please sign in again.');
         setTimeout(() => router.push('/'), 1500);
         return;
       }
       if (res.ok) {
-        setSaveToast('Report saved successfully');
-        setTimeout(() => setSaveToast(null), 3000);
+        toast.success('Report saved successfully');
         setSaveOpen(false);
         setSaveName('');
       } else {
@@ -531,7 +529,6 @@ export default function CustomReportBuilderPage() {
         open={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onLoad={loadReport}
-        onToast={(msg) => { setSaveToast(msg); setTimeout(() => setSaveToast(null), 3000); }}
         onSchedule={(r) => setSchedulingReport(r)}
         scheduleRefreshKey={scheduleRefreshKey}
       />
@@ -781,11 +778,6 @@ export default function CustomReportBuilderPage() {
               </div>
             )}
 
-            {saveToast && (
-              <div className="flex items-center gap-2 px-3 py-2 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-700 rounded-lg text-xs text-green-700 dark:text-green-400">
-                <CheckCircle className="w-3.5 h-3.5" /> {saveToast}
-              </div>
-            )}
           </div>
 
           {/* ─── Right: Preview panel ────────────────────────────────────────── */}

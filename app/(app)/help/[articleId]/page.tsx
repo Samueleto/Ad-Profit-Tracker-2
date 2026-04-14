@@ -11,7 +11,7 @@ import TableOfContents from '@/features/help-center/components/TableOfContents';
 import FeedbackWidget from '@/features/help-center/components/FeedbackWidget';
 import ArticleShimmer from '@/features/help-center/components/ArticleShimmer';
 import ArticleRow from '@/features/help-center/components/ArticleRow';
-import { Toast } from '@/components/ui/Toast';
+import { toast } from 'sonner';
 import type { HelpArticle, HelpArticleListItem, HelpCategory } from '@/features/help-center/types';
 
 const CATEGORY_COLORS: Record<HelpCategory, string> = {
@@ -77,7 +77,6 @@ export default function HelpArticlePage({ params }: HelpArticlePageProps) {
   const [article, setArticle] = useState<HelpArticle | null>(null);
   const [relatedArticles, setRelatedArticles] = useState<HelpArticleListItem[]>([]);
   const [copied, setCopied] = useState(false);
-  const [copyToast, setCopyToast] = useState(false);
 
   const loadArticle = async () => {
     setLoadState('loading');
@@ -119,7 +118,7 @@ export default function HelpArticlePage({ params }: HelpArticlePageProps) {
   const handleCopyLink = () => {
     navigator.clipboard.writeText(window.location.href).then(() => {
       setCopied(true);
-      setCopyToast(true);
+      toast.success('Link copied to clipboard');
       setTimeout(() => setCopied(false), 2000);
     }).catch(() => {});
   };
@@ -277,13 +276,6 @@ export default function HelpArticlePage({ params }: HelpArticlePageProps) {
         </div>
       ) : null}
 
-      {copyToast && (
-        <Toast
-          message="Link copied to clipboard"
-          variant="success"
-          onClose={() => setCopyToast(false)}
-        />
-      )}
     </div>
   );
 }

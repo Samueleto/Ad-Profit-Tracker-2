@@ -16,25 +16,15 @@ export async function GET(request: Request) {
 
     let query = adminDb
       .collection("syncErrors")
-      .where("uid", "==", uid)
-      .orderBy("createdAt", "desc")
-      .limit(limit);
+      .where("uid", "==", uid) as FirebaseFirestore.Query;
 
-    if (status) {
-      query = adminDb
-        .collection("syncErrors")
-        .where("uid", "==", uid)
-        .where("status", "==", status)
-        .orderBy("createdAt", "desc")
-        .limit(limit);
-    }
+    if (status) query = query.where("status", "==", status);
+    if (networkId) query = query.where("networkId", "==", networkId);
+
+    query = query.orderBy("createdAt", "desc").limit(limit);
 
     const snapshot = await query.get();
-    let errors = snapshot.docs.map(serializeDoc).filter(Boolean);
-
-    if (networkId) {
-      errors = errors.filter((e) => e!.networkId === networkId);
-    }
+    const errors = snapshot.docs.map(serializeDoc).filter(Boolean);
 
     return NextResponse.json({ errors, total: errors.length });
   } catch (error) {

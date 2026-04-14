@@ -61,12 +61,27 @@ export async function GET(request: Request) {
       }
     }
 
+    const sortedDates = Array.from(dates).sort().reverse();
+    const total = dates.size;
+
+    // Compute availability for DataAvailabilityDot component
+    let availability: 'full' | 'partial' | 'none' = 'none';
+    if (total > 0 && dateFrom && dateTo) {
+      const rangeDays = Math.round(
+        (new Date(dateTo).getTime() - new Date(dateFrom).getTime()) / 86400000
+      ) + 1;
+      availability = total >= rangeDays * 0.8 ? 'full' : 'partial';
+    } else if (total > 0) {
+      availability = 'full';
+    }
+
     return NextResponse.json({
       networkId: networkId || null,
       dateFrom: dateFrom || null,
       dateTo: dateTo || null,
-      dates: Array.from(dates).sort().reverse(),
-      total: dates.size,
+      dates: sortedDates,
+      total,
+      availability,
     });
   } catch (error) {
     console.error("GET /api/stats/dates error:", error);

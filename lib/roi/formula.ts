@@ -4,7 +4,9 @@ import type { RoiIndicator, ColorCode } from '@/features/roi/types';
 
 export function computeRoi(totalRevenue: number, totalCost: number): number | null {
   if (totalCost <= 0) return null;
-  return ((totalRevenue - totalCost) / totalCost) * 100;
+  const roi = ((totalRevenue - totalCost) / totalCost) * 100;
+  if (!isFinite(roi)) return null;
+  return roi;
 }
 
 export function getColorCode(roi: number | null): ColorCode {

@@ -198,7 +198,16 @@ export function useApiExplorer() {
   const testConnection = useCallback(async (networkId: NetworkId) => {
     setRawStates(prev => ({ ...prev, [networkId]: { ...prev[networkId], testing: true, testResult: null } }));
     try {
-      const result = await fetchWithAuth('/api/networks/config/test-connection');
+      const res = await authFetch('/api/networks/config/test-connection', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ networkId }),
+      });
+      if (res === null) {
+        setRawStates(prev => ({ ...prev, [networkId]: { ...prev[networkId], testing: false, testResult: { error: 'Session expired.' } } }));
+        return;
+      }
+      const result = await res.json();
       setRawStates(prev => ({ ...prev, [networkId]: { ...prev[networkId], testing: false, testResult: result } }));
     } catch (err) {
       setRawStates(prev => ({ ...prev, [networkId]: { ...prev[networkId], testing: false, testResult: { error: err instanceof Error ? err.message : 'Test failed.' } } }));

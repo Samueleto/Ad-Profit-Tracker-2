@@ -1,8 +1,10 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { useRouter } from 'next/navigation';
 import { getAuth } from 'firebase/auth';
 import { AlertCircle, Loader2, X } from 'lucide-react';
+import { toast } from 'sonner';
 
 const NETWORKS = ['exoclick', 'rollerads', 'zeydoo', 'propush'];
 const SEVERITY_OPTIONS = ['all', 'warning', 'critical'] as const;
@@ -24,9 +26,9 @@ interface Anomaly {
   revenue?: number;
 }
 
-async function authFetch(path: string, init: RequestInit = {}): Promise<Response> {
+async function authFetch(path: string, init: RequestInit = {}, refresh = false): Promise<Response> {
   const auth = getAuth();
-  const token = await auth.currentUser?.getIdToken();
+  const token = await auth.currentUser?.getIdToken(refresh);
   return fetch(path, {
     ...init,
     headers: {
@@ -38,6 +40,7 @@ async function authFetch(path: string, init: RequestInit = {}): Promise<Response
 }
 
 export default function AnomalyListView({ initialNetwork = '', onAllResolved }: { initialNetwork?: string; onAllResolved?: (networkId: string) => void }) {
+  const router = useRouter();
   const [network, setNetwork] = useState(initialNetwork);
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -81,7 +84,15 @@ export default function AnomalyListView({ initialNetwork = '', onAllResolved }: 
     setFetchError(false);
     setSelected(new Set());
     try {
-      const res = await authFetch(`/api/reconciliation/anomalies?${buildQuery()}`);
+      let res = await authFetch(`/api/reconciliation/anomalies?${buildQuery()}`);
+      if (res.status === 401) {
+        res = await authFetch(`/api/reconciliation/anomalies?${buildQuery()}`, {}, true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (!res.ok) { setFetchError(true); return; }
       const data = await res.json();
       setAnomalies(data.anomalies ?? []);
@@ -90,7 +101,7 @@ export default function AnomalyListView({ initialNetwork = '', onAllResolved }: 
     } catch { setFetchError(true); }
     finally { setLoading(false); }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [network, startDate, endDate, severity, anomalyType]);
+  }, [network, startDate, endDate, severity, anomalyType, router]);
 
   useEffect(() => { fetchAnomalies(); }, [fetchAnomalies]);
 
@@ -98,7 +109,15 @@ export default function AnomalyListView({ initialNetwork = '', onAllResolved }: 
     if (!cursor) return;
     setLoadingMore(true);
     try {
-      const res = await authFetch(`/api/reconciliation/anomalies?${buildQuery(cursor)}`);
+      let res = await authFetch(`/api/reconciliation/anomalies?${buildQuery(cursor)}`);
+      if (res.status === 401) {
+        res = await authFetch(`/api/reconciliation/anomalies?${buildQuery(cursor)}`, {}, true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (!res.ok) return;
       const data = await res.json();
       setAnomalies(prev => [...prev, ...(data.anomalies ?? [])]);
@@ -126,15 +145,24 @@ export default function AnomalyListView({ initialNetwork = '', onAllResolved }: 
   const handleResolve = async () => {
     setResolving(true);
     setResolveError(null);
+    const resolveInit = {
+      method: 'PATCH',
+      body: JSON.stringify({
+        ids: [...selected],
+        resolution: resolutionType,
+        note: resolutionNote || null,
+      }),
+    };
     try {
-      const res = await authFetch('/api/reconciliation/resolve', {
-        method: 'PATCH',
-        body: JSON.stringify({
-          ids: [...selected],
-          resolution: resolutionType,
-          note: resolutionNote || null,
-        }),
-      });
+      let res = await authFetch('/api/reconciliation/resolve', resolveInit);
+      if (res.status === 401) {
+        res = await authFetch('/api/reconciliation/resolve', resolveInit, true);
+        if (res.status === 401) {
+          toast.error('Session expired. Please sign in again.');
+          router.replace('/');
+          return;
+        }
+      }
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         setResolveError(data.error ?? 'Resolve failed.');
